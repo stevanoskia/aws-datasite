@@ -1,0 +1,60 @@
+# --- local-only docs (never public) ---
+docs/goal-original.md
+# CLAUDE.md stays local for now (Andrej decides later whether to publish it)
+CLAUDE.md
+*.local.md
+
+# --- Terraform ---
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+# variable files hold IPs/IDs: only the *.example versions are committed
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+backend.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# (.terraform.lock.hcl IS committed)
+
+# --- secrets / credentials ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials*
+.aws/
+
+# --- Claude Code local settings ---
+.claude/settings.local.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- load test / data outputs ---
+loadgen/results/
+*.csv.gz
+*.parquet
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
