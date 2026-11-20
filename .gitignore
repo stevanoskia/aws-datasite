@@ -21,7 +21,8 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-# (.terraform.lock.hcl IS committed)
+# (.terraform.lock.hcl IS committed for stacks in terraform/live; modules don't pin versions, the stack using them does)
+terraform/modules/**/.terraform.lock.hcl
 
 # --- secrets / credentials ---
 .env

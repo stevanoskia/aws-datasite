@@ -1,0 +1,215 @@
+# Infrastructure pipeline: validate → plan → (approval) → apply
+#
+# - Runs on every push to main that touches Terraform code (or by hand).
+# - Plans every stack in terraform/live in number order, except 00-bootstrap (applied by hand only, see ADR-0001).
+# - If any stack has changes, the apply job waits for approval in the "production" environment,
+#   then applies exactly the plans that were reviewed (saved, encrypted, passed between jobs).
+# - AWS access: access keys of key-only IAM users that can only assume their role (OIDC is blocked, ADR-0001).
+
+name: infra
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/infra.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read # the default token can only read the repository
+
+concurrency:
+  group: infra # never two infrastructure runs at the same time
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.17.1"
+  TFLINT_VERSION: "0.65.0"
+  AWS_REGION: eu-north-1
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  validate:
+    name: validate (fmt, validate, tflint)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # The tflint action's publisher is not a verified creator, so download the binary
+      # and check it against the release's published checksum instead
+      - name: Install tflint
+        run: |
+          set -euo pipefail
+          base="https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/tflint_linux_amd64.zip"
+          curl -fsSLO "$base/checksums.txt"
+          grep ' tflint_linux_amd64.zip$' checksums.txt | sha256sum -c -
+          unzip -q tflint_linux_amd64.zip -d bin
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Format check
+        run: terraform fmt -check -recursive -diff terraform
+
+      - name: Validate and lint every module and stack
+        run: |
+          set -euo pipefail
+          for dir in terraform/modules/*/ terraform/live/*/; do
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false > /dev/null
+            terraform -chdir="$dir" validate -no-color
+            tflint --chdir="$dir"
+            echo "::endgroup::"
+          done
+
+  plan:
+    name: plan (read-only role)
+    needs: validate
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.plan.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: AWS credentials (ci-plan role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_PLAN_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_PLAN_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+          role-session-name: gha-plan-${{ github.run_id }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+
+      - name: Plan every stack
+        id: plan
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          mkdir -p plans
+          changed=""
+          for dir in terraform/live/*/; do
+            stack="$(basename "$dir")"
+            if [ "$stack" = "00-bootstrap" ]; then continue; fi # applied by hand only
+
+            printf 'bucket = "%s"\nkey = "%s/terraform.tfstate"\nregion = "%s"\nuse_lockfile = true\nencrypt = true\n' \
+              "$TF_STATE_BUCKET" "$stack" "$AWS_REGION" > "$dir/backend.hcl"
+            terraform -chdir="$dir" init -backend-config=backend.hcl > /dev/null
+
+            # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes
+            set +e
+            terraform -chdir="$dir" plan -no-color -lock-timeout=5m -detailed-exitcode \
+              -out="$GITHUB_WORKSPACE/plans/$stack.tfplan" > "plans/$stack.txt" 2>&1
+            rc=$?
+            set -e
+            echo "::group::plan $stack"; cat "plans/$stack.txt"; echo "::endgroup::"
+
+            if [ "$rc" -eq 1 ]; then echo "::error::plan failed for $stack"; exit 1; fi
+            if [ "$rc" -eq 2 ]; then changed="$changed $stack"; else rm -f "plans/$stack.tfplan"; fi
+
+            # Public summary: only the result line and the resource addresses, no attribute values
+            {
+              echo "### $stack"
+              grep -E '^(Plan:|No changes)' "plans/$stack.txt" || true
+              grep -E '^  # ' "plans/$stack.txt" | sed 's/^  # /- /' || true
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "changed=$(echo "$changed" | xargs)" >> "$GITHUB_OUTPUT"
+
+      # Saved plans can contain sensitive values, and artifacts of a public repository can be
+      # downloaded by others, so they are encrypted before upload (and kept 1 day only)
+      - name: Encrypt saved plans
+        if: steps.plan.outputs.changed != ''
+        env:
+          TF_PLAN_PASSPHRASE: ${{ secrets.TF_PLAN_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          tar -czf plans.tgz plans/*.tfplan
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in plans.tgz -out plans.tgz.enc -pass env:TF_PLAN_PASSPHRASE
+          rm -f plans.tgz plans/*.tfplan
+
+      - name: Upload encrypted plans
+        if: steps.plan.outputs.changed != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tfplans
+          path: plans.tgz.enc
+          retention-days: 1
+          if-no-files-found: error
+
+  apply:
+    name: apply (needs approval)
+    needs: plan
+    if: needs.plan.outputs.changed != ''
+    runs-on: ubuntu-24.04
+    environment: production # required reviewer; the apply keys are secrets of this environment only
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tfplans
+
+      - name: Decrypt saved plans
+        env:
+          TF_PLAN_PASSPHRASE: ${{ secrets.TF_PLAN_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in plans.tgz.enc -out plans.tgz -pass env:TF_PLAN_PASSPHRASE
+          tar -xzf plans.tgz
+
+      - name: AWS credentials (ci-apply role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_APPLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_APPLY_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          role-session-name: gha-apply-${{ github.run_id }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+
+      - name: Apply the reviewed plans (in stack order)
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          CHANGED: ${{ needs.plan.outputs.changed }}
+        run: |
+          set -euo pipefail
+          for stack in $CHANGED; do
+            dir="terraform/live/$stack"
+            printf 'bucket = "%s"\nkey = "%s/terraform.tfstate"\nregion = "%s"\nuse_lockfile = true\nencrypt = true\n' \
+              "$TF_STATE_BUCKET" "$stack" "$AWS_REGION" > "$dir/backend.hcl"
+            terraform -chdir="$dir" init -backend-config=backend.hcl > /dev/null
+            echo "::group::apply $stack"
+            # A saved plan is refused if the state changed since it was made ("stale plan")
+            terraform -chdir="$dir" apply -no-color -lock-timeout=5m "$GITHUB_WORKSPACE/plans/$stack.tfplan"
+            echo "::endgroup::"
+            echo "### $stack: applied" >> "$GITHUB_STEP_SUMMARY"
+          done
