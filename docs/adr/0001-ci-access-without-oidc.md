@@ -101,7 +101,18 @@ IAM policy simulator against the deployed roles (organization policies included,
 | plan: read a state file | allow | allowed ✅ |
 | plan: launch an EC2 instance | deny | implicitDeny ✅ |
 
-Still to validate: the first real workflow run (plan → approval → apply) and a key rotation.
+First real pipeline run, 2026-11-20 (`infra` workflow, stack `10-network`, 2 resources):
+- `validate` and `plan` ran with no human involved, and `apply` waited until the required reviewer approved it in the `production` environment.
+- The apply keys were released only to the approved job.
+- In the public job log: 0 occurrences of the account ID, the state bucket name not visible, all 16 secret values masked as `***`.
+- The saved plan was uploaded encrypted (expires after 1 day).
+- CloudTrail records the change under the role session `gha-apply-<run id>`, so every AWS change can be traced to the exact workflow run.
+
+Found during that run: GitHub refuses changes to `.github/workflows/*` pushed with a **deploy key** (it has no `workflow` permission).
+Workflow changes are therefore pushed over HTTPS with the owner's `gh` login (scope `workflow`); everything else uses the repository-scoped deploy key.
+This adds a stronger credential for the most sensitive files, the ones that decide what runs with the secrets.
+
+Still to validate: a key rotation.
 
 ## Outcome and next steps
 - The CI access is in place; the keys will be created together with the first `infra` workflow.

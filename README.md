@@ -17,9 +17,9 @@ Target architecture. Parts marked ✅ exist; the rest is built phase by phase, a
 ```
   Laptop on the company VPN                                 GitHub Actions (GitHub-hosted runners)
     │ SSM Session Manager port forwarding                     │ access key → assume role ci-plan / ci-apply ✅
-    │ (IAM-authenticated, no inbound ports)                   │ deploy = SSM Run Command (no SSH)
-    │ app, Grafana and psql on localhost                      │
- ┌──▼─────────────────────────── VPC 10.30.0.0/16, eu-north-1 ───────────▼────────────────────┐
+    │ (IAM-authenticated, no inbound ports)                   │ infra pipeline: validate → plan → approval → apply ✅
+    │ app, Grafana and psql on localhost                      │ deploy = SSM Run Command (no SSH)
+ ┌──▼───────────────────────── VPC 10.30.0.0/16, eu-north-1 ✅ ─────────▼────────────────────┐
  │ public subnet                                                                              │
  │   NAT instance (outbound only, no inbound rules)                                           │
  │                                                                                            │
@@ -43,7 +43,7 @@ Target architecture. Parts marked ✅ exist; the rest is built phase by phase, a
 | Terraform stack | Contents | Status |
 |---|---|---|
 | `00-bootstrap` | State bucket, alerts topic, budget, CI access | ✅ applied |
-| `10-network` | VPC, subnets, NAT instance, flow logs, SSM access | planned |
+| `10-network` | VPC, subnets, NAT instance, flow logs, SSM access | in progress: VPC + locked default security group ✅ (applied through the pipeline) |
 | `20-data` | RDS PostgreSQL, parameter group, secrets | planned |
 | `30-app` | App host, container registry | planned |
 | `40-observability` | Monitoring host | planned |
