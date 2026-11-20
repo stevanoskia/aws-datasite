@@ -283,6 +283,13 @@ resource "aws_iam_role_policy" "apply_guardrails" {
         Resource = "*"
       },
       {
+        # CI deploys with SSM Run Command; it never needs interactive or port-forwarding sessions
+        Sid      = "DenyInteractiveSessions"
+        Effect   = "Deny"
+        Action   = ["ssm:StartSession", "ssm:ResumeSession"]
+        Resource = "*"
+      },
+      {
         # The state bucket itself is managed only by 00-bootstrap (by hand)
         Sid    = "DenyStateBucketChanges"
         Effect = "Deny"

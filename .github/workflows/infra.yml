@@ -102,6 +102,8 @@ jobs:
         id: plan
         env:
           TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          # Inputs that must not be in the repo come from secrets as TF_VAR_* (variables marked sensitive)
+          TF_VAR_operator_allowed_cidrs: ${{ secrets.OPERATOR_ALLOWED_CIDRS }}
         run: |
           set -euo pipefail
           mkdir -p plans

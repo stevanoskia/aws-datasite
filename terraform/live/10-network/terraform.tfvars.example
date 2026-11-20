@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (git-ignored) and put in the real values.
+# In CI the same value comes from the repository secret OPERATOR_ALLOWED_CIDRS.
+
+# Public egress IPs of the office network / company VPN (find yours: https://checkip.amazonaws.com)
+operator_allowed_cidrs = ["203.0.113.10/32"]

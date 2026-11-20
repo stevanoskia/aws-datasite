@@ -15,3 +15,21 @@ variable "vpc_cidr" {
   type        = string
   default     = "10.30.0.0/16"
 }
+
+variable "operator_allowed_cidrs" {
+  description = "Public IP ranges (office / VPN egress) allowed to start SSM sessions. Local: terraform.tfvars; CI: secret OPERATOR_ALLOWED_CIDRS"
+  type        = list(string)
+  sensitive   = true
+}
+
+variable "operator_trusted_role_path_name" {
+  description = "Path + name of the admin role allowed to switch into the operator role"
+  type        = string
+  default     = "managed/AccountFullAccessRole"
+}
+
+variable "test_instance_enabled" {
+  description = "Create the small test instance used for the phase 1 isolation proofs"
+  type        = bool
+  default     = true
+}
