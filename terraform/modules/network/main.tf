@@ -135,6 +135,31 @@ data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
 # -----------------------------------------------------------------------------
+# Security group of the app server. It lives here because the database stack must
+# allow it, and stacks only read from lower numbers (ADR-0002).
+# No inbound rule at all: the server is reached through SSM, which it dials out to.
+# -----------------------------------------------------------------------------
+
+resource "aws_security_group" "app" {
+  name        = "${var.name_prefix}-app"
+  description = "App server: no inbound, outbound HTTPS only"
+  vpc_id      = aws_vpc.this.id
+
+  tags = {
+    Name = "${var.name_prefix}-app"
+  }
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_https" {
+  security_group_id = aws_security_group.app.id
+  description       = "HTTPS out (SSM, AWS APIs, packages, images)"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+# -----------------------------------------------------------------------------
 # VPC flow logs → S3: every accepted and rejected connection, kept 30 days
 # -----------------------------------------------------------------------------
 

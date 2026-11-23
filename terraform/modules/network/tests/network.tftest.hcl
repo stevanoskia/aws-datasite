@@ -85,6 +85,22 @@ run "default_security_group_stays_empty" {
   }
 }
 
+run "app_server_has_no_inbound_and_only_https_out" {
+  assert {
+    condition     = length(aws_security_group.app.ingress) == 0 && length(aws_security_group.app.egress) == 0
+    error_message = "The app security group must have no inline rules."
+  }
+
+  assert {
+    condition = (
+      aws_vpc_security_group_egress_rule.app_https.from_port == 443
+      && aws_vpc_security_group_egress_rule.app_https.to_port == 443
+      && aws_vpc_security_group_egress_rule.app_https.ip_protocol == "tcp"
+    )
+    error_message = "Outbound must be HTTPS only."
+  }
+}
+
 run "flow_logs_record_everything_in_a_private_bucket" {
   assert {
     condition     = aws_flow_log.vpc.traffic_type == "ALL"

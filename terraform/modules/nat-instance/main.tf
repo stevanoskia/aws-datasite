@@ -114,6 +114,9 @@ resource "aws_instance" "nat" {
   }
 
   lifecycle {
-    ignore_changes = [ami] # a newer AMI shouldn't replace the router on every plan; update on purpose
+    # ami: a newer AMI shouldn't replace the router on every plan; update on purpose.
+    # associate_public_ip_address: a stopped instance has no public IP, which Terraform reads as
+    # "false" and would answer by replacing the instance (it is stopped outside working hours).
+    ignore_changes = [ami, associate_public_ip_address]
   }
 }

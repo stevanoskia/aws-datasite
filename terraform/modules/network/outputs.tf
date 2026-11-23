@@ -42,3 +42,8 @@ output "flow_logs_bucket" {
   description = "S3 bucket with the VPC flow logs"
   value       = aws_s3_bucket.flow_logs.bucket
 }
+
+output "app_security_group_id" {
+  description = "Security group of the app server"
+  value       = aws_security_group.app.id
+}

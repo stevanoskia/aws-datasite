@@ -4,6 +4,7 @@
 #   module.nat       NAT instance in a public subnet
 #   aws_route        app tier → internet via the NAT instance (connects the two modules)
 #   module.operator  your daily access role: SSM sessions only from the allowed IPs
+#   module.nat_schedule  NAT on weekdays 07:00-19:00 only
 #   test instance    temporary, for the isolation proofs (test-instance.tf)
 
 data "aws_caller_identity" "current" {}
@@ -44,5 +45,14 @@ module "operator" {
   project_tag              = var.project
   allowed_source_cidrs     = var.operator_allowed_cidrs
   trusted_role_arns        = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.operator_trusted_role_path_name}"]
+  permissions_boundary_arn = data.aws_iam_policy.boundary.arn
+}
+
+module "nat_schedule" {
+  source = "../../modules/scheduler"
+
+  name_prefix              = var.project
+  name                     = "nat"
+  instance_ids             = [module.nat.instance_id]
   permissions_boundary_arn = data.aws_iam_policy.boundary.arn
 }

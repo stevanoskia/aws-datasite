@@ -42,3 +42,8 @@ output "flow_logs_bucket" {
   description = "S3 bucket with the VPC flow logs"
   value       = module.network.flow_logs_bucket
 }
+
+output "app_security_group_id" {
+  description = "Security group of the app server"
+  value       = module.network.app_security_group_id
+}
