@@ -42,5 +42,5 @@ variable "instance_az_index" {
 variable "test_instance_enabled" {
   description = "Create the small test instance used for the phase 1 isolation proofs"
   type        = bool
-  default     = true
+  default     = false
 }
