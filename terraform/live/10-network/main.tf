@@ -25,7 +25,7 @@ module "nat" {
 
   name_prefix              = var.project
   vpc_id                   = module.network.vpc_id
-  subnet_id                = module.network.public_subnet_ids[0]
+  subnet_id                = module.network.public_subnet_ids[var.instance_az_index]
   client_cidrs             = module.network.app_subnet_cidrs
   permissions_boundary_arn = data.aws_iam_policy.boundary.arn
 }

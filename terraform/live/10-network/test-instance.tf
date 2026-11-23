@@ -77,7 +77,7 @@ resource "aws_instance" "test" {
 
   ami                    = data.aws_ssm_parameter.al2023_arm64[0].insecure_value
   instance_type          = "t4g.micro"
-  subnet_id              = module.network.app_subnet_ids[0]
+  subnet_id              = module.network.app_subnet_ids[var.instance_az_index]
   iam_instance_profile   = aws_iam_instance_profile.test[0].name
   vpc_security_group_ids = [aws_security_group.test[0].id]
 

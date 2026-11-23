@@ -28,6 +28,17 @@ variable "operator_trusted_role_path_name" {
   default     = "managed/AccountFullAccessRole"
 }
 
+variable "instance_az_index" {
+  description = "Availability zone of the NAT and test instance: 0 = a, 1 = b (change it when AWS has no capacity in one zone)"
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = contains([0, 1], var.instance_az_index)
+    error_message = "Must be 0 (zone a) or 1 (zone b)."
+  }
+}
+
 variable "test_instance_enabled" {
   description = "Create the small test instance used for the phase 1 isolation proofs"
   type        = bool
