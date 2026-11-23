@@ -5,7 +5,9 @@
 #   app       NAT instance (out only, set by the stack) app host, monitoring host, test instance
 #   db        none at all                               RDS
 #
-# Every tier also reaches S3 through the free gateway endpoint, without the internet.
+# The app tier also reaches S3 through the free gateway endpoint, without the internet.
+# The db tier does not: nothing in the project needs S3 from the database, and without the
+# endpoint its route table holds nothing but the VPC's own local route.
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -114,14 +116,15 @@ resource "aws_route_table_association" "this" {
 }
 
 # -----------------------------------------------------------------------------
-# S3 gateway endpoint (free): S3 traffic from app and db stays on the AWS network
+# S3 gateway endpoint (free): S3 traffic from the app tier stays on the AWS network.
+# Not attached to the db route table, so the db tier has no route out at all.
 # -----------------------------------------------------------------------------
 
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.this.id
   service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = [aws_route_table.this["app"].id, aws_route_table.this["db"].id]
+  route_table_ids   = [aws_route_table.this["app"].id]
 
   tags = {
     Name = "${var.name_prefix}-s3-endpoint"

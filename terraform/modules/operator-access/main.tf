@@ -68,11 +68,16 @@ resource "aws_iam_role_policy" "operator_sessions" {
         }
       },
       {
-        # Only your own sessions can be resumed or ended
+        # Only your own sessions: open the data stream, resume, end. AWS tags every session with
+        # its owner's aws:userid. A session ARN prefix would not work here, because the session
+        # IDs of a role start with the role session name, not with aws:userid.
         Sid      = "ManageOwnSessions"
         Effect   = "Allow"
-        Action   = ["ssm:ResumeSession", "ssm:TerminateSession"]
-        Resource = "arn:aws:ssm:${local.region}:${local.account_id}:session/$${aws:userid}-*"
+        Action   = ["ssm:ResumeSession", "ssm:TerminateSession", "ssmmessages:OpenDataChannel"]
+        Resource = "arn:aws:ssm:*:*:session/*"
+        Condition = {
+          StringEquals = { "ssm:resourceTag/aws:ssmmessages:session-id" = "$${aws:userid}" }
+        }
       },
       {
         Sid    = "FindInstances"

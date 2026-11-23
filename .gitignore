@@ -3,6 +3,7 @@ docs/goal-original.md
 # CLAUDE.md stays local for now (Andrej decides later whether to publish it)
 CLAUDE.md
 *.local.md
+*.local.txt
 
 # --- Terraform ---
 **/.terraform/

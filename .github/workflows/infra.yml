@@ -13,6 +13,7 @@ on:
     branches: [main]
     paths:
       - "terraform/**"
+      - "scripts/check.ps1"
       - ".github/workflows/infra.yml"
   workflow_dispatch:
 
@@ -32,7 +33,7 @@ env:
 
 jobs:
   validate:
-    name: validate (fmt, validate, tflint)
+    name: validate (private data, fmt, validate, tflint, tests)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,19 +58,11 @@ jobs:
           unzip -q tflint_linux_amd64.zip -d bin
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Format check
-        run: terraform fmt -check -recursive -diff terraform
-
-      - name: Validate and lint every module and stack
-        run: |
-          set -euo pipefail
-          for dir in terraform/modules/*/ terraform/live/*/; do
-            echo "::group::$dir"
-            terraform -chdir="$dir" init -backend=false > /dev/null
-            terraform -chdir="$dir" validate -no-color
-            tflint --chdir="$dir"
-            echo "::endgroup::"
-          done
+      # The same script runs on the laptop before every push (.githooks/pre-push).
+      # The tests use a mocked AWS provider: no login, nothing is created.
+      - name: All checks
+        shell: pwsh
+        run: ./scripts/check.ps1
 
   plan:
     name: plan (read-only role)
