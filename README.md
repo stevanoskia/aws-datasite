@@ -43,9 +43,9 @@ Target architecture. Parts marked ✅ exist; the rest is built phase by phase, a
 | Terraform stack | Contents | Status |
 |---|---|---|
 | `00-bootstrap` | State bucket, alerts topic, budget, CI access | ✅ applied |
-| `10-network` | VPC, subnets, NAT instance, flow logs, SSM access | in progress: VPC + locked default security group ✅ (applied through the pipeline) |
+| `10-network` | VPC, subnets, NAT instance, flow logs, SSM access | ✅ applied; isolation evidence still to be written up |
 | `20-data` | RDS PostgreSQL, parameter group, secrets | planned |
-| `30-app` | App host, container registry | planned |
+| `30-app` | App host, container registry | in progress: private app server with Docker, automatic stop |
 | `40-observability` | Monitoring host | planned |
 
 ## Documentation
