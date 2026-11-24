@@ -1,9 +1,5 @@
 # ADR-0002: Terraform layout and state
 
-- **Status:** Accepted
-- **Date:** 2026-11-20
-- **Requirements:** R1.1, R1.5, R1.6, R2.2
-
 ## Context
 All infrastructure is defined in Terraform and must be creatable, changeable and destroyable repeatedly (R1.6), in reusable components (R1.5),
 and applied from a pipeline (R2.2). Some parts live for the whole project (state bucket, network, database); others will be changed or
@@ -15,13 +11,12 @@ recreated often (hosts, monitoring). The repository is public, so no account-spe
 ```
 terraform/
   modules/                 reusable building blocks with inputs and outputs, no provider or backend config
-    ci-access/             (more per phase: network, nat-instance, rds-postgres, docker-host, observability, scheduler)
+    ci-access/  network/  nat-instance/  operator-access/  rds-postgres/  docker-host/  scheduler/
   live/                    one folder = one stack = one state file
     00-bootstrap/          state bucket, alerts topic, budget, CI access   (applied by hand only)
     10-network/            VPC, subnets, NAT instance, flow logs, SSM access
-    20-data/               RDS and its parameter group, secrets
-    30-app/                app host, ECR
-    40-observability/      monitoring host
+    20-data/               RDS, its parameter group and automatic stop
+    30-app/                app server and automatic stop
 ```
 - Splitting by layer keeps every `plan` small and quick, and a mistake in the app stack can't touch the network or the DB.
 - Stacks read each other's outputs from the remote state (`terraform_remote_state`), always in the direction of the numbers (30 reads 10 and 20, never the other way).
@@ -65,15 +60,15 @@ terraform/
 |---|---|---|---|
 | One root module for everything | Simplest | Every plan touches everything; one state = one blast radius; slow plans | Rejected |
 | Terraform workspaces per layer | One folder | Workspaces are meant for copies of the same config, not different layers; easy to apply to the wrong workspace | Rejected |
-| Terragrunt | Less repetition across stacks | Another tool to learn and explain; not needed for one environment | Rejected for now |
+| Terragrunt | Less repetition across stacks | Another tool to learn and explain; not needed for one environment | Rejected |
 | DynamoDB table for locking | The classic pattern | An extra resource; deprecated in favour of S3 native locking | Rejected |
 | HCP Terraform (remote state + runs) | Hosted state, UI, run history | External service, state outside the account; its own credentials to AWS would hit the same OIDC block | Rejected |
 | Local state | No setup | Can't be shared with CI; lost with the laptop | Used only during bootstrap |
 | KMS customer key for the state | Key policy control, audit | $1/month per key; SSE-S3 is enough for this threat model | Rejected |
 
 ## Consequences
-- Several stacks mean several `init`/`plan` runs. CI handles this with a matrix, applied in number order.
-- Cross-stack dependencies must be planned carefully. Destroying runs in reverse order (40 → 10), and `00-bootstrap` is destroyed last, by hand.
+- Several stacks mean several `init`/`plan` runs. The pipeline plans and applies them one after the other, in number order.
+- All stacks are planned before any is applied, so a stack can't read a new output of a lower stack in the same push. Destroying runs in reverse order (40 → 10), and `00-bootstrap` is destroyed last, by hand.
 - `prevent_destroy` means a full teardown of the bootstrap needs a deliberate code change. That's intended.
 - **Security:** the state contains resource IDs and ARNs, and later possibly sensitive values. It stays in the private, encrypted bucket,
   and only the CI roles and admins can read it.
@@ -87,6 +82,5 @@ terraform/
   `DenyInsecureTransport` policy, the 90-day lifecycle rule.
 - State migrated to S3 (`00-bootstrap/terraform.tfstate`). A following `terraform plan` reported **No changes**, so the migrated state is complete.
 
-## Outcome and next steps
-- The structure and the state backend are ready for the next stacks.
-- Next: `10-network` as the first stack applied through the CI pipeline. Destroy → recreate test of all stacks in phase 8 (R1.6).
+## Outcome and further improvements
+Four stacks use this layout; three of them are applied through the pipeline only. Recommended improvement: a full destroy and recreate test of all stacks.

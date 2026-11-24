@@ -1,9 +1,5 @@
 # ADR-NNNN: <title>
 
-- **Status:** Proposed | Accepted | Superseded by ADR-NNNN
-- **Date:** YYYY-MM-DD
-- **Requirements:** R?.? (from [requirements.md](../requirements.md))
-
 ## Context
 What problem or need led to this decision, and why it was necessary. Facts and constraints that shaped it.
 
@@ -21,5 +17,5 @@ Drawbacks, limitations, security considerations and cost implications of the cho
 ## Validation
 How it was checked that the decision works as intended (commands, results, screenshots, links to runs).
 
-## Outcome and next steps
+## Outcome and further improvements
 What the result was, and recommended further improvements.

@@ -49,7 +49,7 @@ locals {
     "track_io_timing"               = { value = "1" }    # I/O times in plans and statistics
     "log_min_duration_statement"    = { value = "500" }  # log statements slower than 500 ms
     "auto_explain.log_min_duration" = { value = "500" }  # ... together with their plan
-    "auto_explain.log_analyze"      = { value = "1" }    # real row counts in those plans
+    "auto_explain.log_analyze"      = { value = "0" }    # off: it instruments every statement. On only during an investigation
     "auto_explain.log_buffers"      = { value = "1" }    # ... and buffer use
     "auto_explain.log_timing"       = { value = "0" }    # per-node timing would slow down every statement
     "log_lock_waits"                = { value = "1" }    # waits longer than deadlock_timeout (1 s)

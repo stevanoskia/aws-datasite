@@ -1,9 +1,5 @@
 # ADR-0001: CI access to AWS without OIDC
 
-- **Status:** Accepted
-- **Date:** 2026-11-20
-- **Requirements:** R2.2, R2.4, R2.5, R6.4, R6.6
-
 ## Context
 GitHub Actions has to run `terraform plan` / `apply` and deploy the application, so it needs AWS credentials. The recommended way is
 **OIDC**: GitHub issues a short-lived token per workflow run, and AWS exchanges it for temporary role credentials, so no secret is stored anywhere.
@@ -34,7 +30,7 @@ GitHub secret (access key) ─▶ IAM user ─(sts:AssumeRole only)─▶ IAM ro
 
 **Apply role: explicit denies** (an explicit deny always wins over an allow)
 - No IAM users, access keys, login profiles, or user policies.
-- No changes to the CI users, the CI roles or the boundary policy, so there is no privilege escalation.
+- No changes to the CI users, the CI roles or the boundary policy.
 - No removing a permissions boundary.
 - No changes to the Terraform state bucket's configuration (delete, policy, versioning, lifecycle, encryption, public access block).
 
@@ -69,10 +65,12 @@ Code: [`terraform/modules/ci-access`](../../terraform/modules/ci-access/main.tf)
   These limit the damage:
   - The user can do nothing but assume one role.
   - The apply key is released only after an approval.
-  - The apply role can't create users or keys, can't escalate itself, and can't create a role stronger than the boundary.
-  - Rotation every 30 days; a CloudTrail-based alarm for key use outside workflow runs (planned, phase 5).
+  - The apply role can't create users or keys, and can't create a role stronger than the boundary.
+  - **Limitation:** the explicit denies apply to the apply role itself. Roles it creates are limited by the boundary only, which is wider.
+    The tests below cover direct actions of the CI roles.
+  - Rotation every 30 days.
 - **`PowerUserAccess` is broad** for the services it covers: within eu-north-1 it could delete resources that don't belong to the project.
-  This is accepted for a single-purpose lab account. A narrower policy can be generated from CloudTrail activity later (next steps).
+  The account is used for this project only.
 - **An approval is needed for every `apply`.** That is deliberate (R2.5): a human checks every infrastructure change. Application deploys
   don't use the apply key's infrastructure path and run automatically.
 - **Cost:** IAM is free.
@@ -112,12 +110,10 @@ Found during that run: GitHub refuses changes to `.github/workflows/*` pushed wi
 Workflow changes are therefore pushed over HTTPS with the owner's `gh` login (scope `workflow`); everything else uses the repository-scoped deploy key.
 This adds a stronger credential for the most sensitive files, the ones that decide what runs with the secrets.
 
-Still to validate: a key rotation.
-
-## Outcome and next steps
-- The CI access is in place; the keys will be created together with the first `infra` workflow.
-- Next steps:
-  - a CloudTrail alarm for CI key use outside workflow runs;
-  - automated key rotation (optional);
-  - replace `PowerUserAccess` with a policy built from the actions actually used (IAM Access Analyzer policy generation isn't available here, so CloudTrail is analysed manually);
-  - switch to OIDC if the SCP ever allows it.
+## Outcome and further improvements
+The pipeline plans and applies infrastructure, and the keys themselves can only assume their role. Recommended improvements:
+- a narrower boundary for the roles CI creates;
+- a CloudTrail alarm for CI key use outside workflow runs;
+- automated key rotation;
+- replace `PowerUserAccess` with a policy built from the actions actually used (IAM Access Analyzer policy generation isn't available here, so CloudTrail is analysed manually);
+- switch to OIDC if the SCP ever allows it.

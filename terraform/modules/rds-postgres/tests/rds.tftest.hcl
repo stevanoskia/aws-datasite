@@ -84,6 +84,11 @@ run "query_statistics_are_on" {
   }
 
   assert {
+    condition     = anytrue([for p in aws_db_parameter_group.this.parameter : p.name == "auto_explain.log_analyze" && p.value == "0"])
+    error_message = "auto_explain.log_analyze slows every statement down and must be off by default."
+  }
+
+  assert {
     condition     = aws_db_parameter_group.this.family == "postgres18"
     error_message = "The parameter group family must match the engine version."
   }

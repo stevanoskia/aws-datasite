@@ -12,7 +12,10 @@ answers the same questions: what, why, how, alternatives, why this one, drawback
 
 ## Decision records
 
-| ADR | Title | Status |
-|---|---|---|
-| [0001](adr/0001-ci-access-without-oidc.md) | CI access to AWS without OIDC | Accepted |
-| [0002](adr/0002-terraform-layout-and-state.md) | Terraform layout and state | Accepted |
+| ADR | Title |
+|---|---|
+| [0001](adr/0001-ci-access-without-oidc.md) | CI access to AWS without OIDC |
+| [0002](adr/0002-terraform-layout-and-state.md) | Terraform layout and state |
+| [0003](adr/0003-network-isolation-and-private-access.md) | Network isolation and private access |
+| [0004](adr/0004-servers-and-automatic-stop.md) | Servers and automatic stop |
+| [0005](adr/0005-database.md) | Database |

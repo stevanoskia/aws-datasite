@@ -12,7 +12,7 @@ A small internal web application on AWS, used to practise cloud infrastructure, 
 
 ## Architecture
 
-Target architecture. Parts marked ✅ exist; the rest is built phase by phase, and this diagram is updated as each part is built.
+Target architecture. Parts marked ✅ exist.
 
 ```
   Laptop on the company VPN                                 GitHub Actions (GitHub-hosted runners)
@@ -21,14 +21,14 @@ Target architecture. Parts marked ✅ exist; the rest is built phase by phase, a
     │ app, Grafana and psql on localhost                      │ deploy = SSM Run Command (no SSH)
  ┌──▼───────────────────────── VPC 10.30.0.0/16, eu-north-1 ✅ ─────────▼────────────────────┐
  │ public subnet                                                                              │
- │   NAT instance (outbound only, no inbound rules)                                           │
+ │   NAT instance (outbound only, nothing in from the internet) ✅                            │
  │                                                                                            │
  │ private-app subnets (2 AZs), no public IPs                                                 │
  │   app host:  FastAPI app · k6 traffic generator · Grafana Alloy (logs + metrics)            │
  │   obs host:  Prometheus · Grafana · Loki · postgres_exporter · YACE (CloudWatch metrics)    │
  │                                                                                            │
  │ private-db subnets (2 AZs), no route out                                                   │
- │   RDS PostgreSQL 18 (db.t4g.micro), encrypted, not public, point-in-time recovery          │
+ │   RDS PostgreSQL 18 (db.t4g.micro), encrypted, not public, point-in-time recovery ✅       │
  │                                                                                            │
  │ Security groups chained: app → db, obs → db, obs → app; nothing open to the internet       │
  │ VPC flow logs · S3 gateway endpoint · RDS logs → CloudWatch Logs → Loki                    │
@@ -37,16 +37,15 @@ Target architecture. Parts marked ✅ exist; the rest is built phase by phase, a
  Outside the VPC
    Terraform state: S3 bucket, versioned, encrypted, locked ✅
    Alerts: SNS topic → email ✅ · monthly budget with alerts ✅
-   Scheduler: stops and starts hosts and database outside working hours
+   Scheduler: stops and starts hosts and database outside working hours ✅
 ```
 
-| Terraform stack | Contents | Status |
-|---|---|---|
-| `00-bootstrap` | State bucket, alerts topic, budget, CI access | ✅ applied |
-| `10-network` | VPC, subnets, NAT instance, flow logs, SSM access | ✅ applied; isolation evidence still to be written up |
-| `20-data` | RDS PostgreSQL, parameter group, secrets | in progress: private instance, only the app server may connect, automatic stop |
-| `30-app` | App host, container registry | in progress: private app server with Docker ✅, automatic stop ✅ |
-| `40-observability` | Monitoring host | planned |
+| Terraform stack | Contents |
+|---|---|
+| `00-bootstrap` | State bucket, alerts topic, budget, CI access ([ADR-0001](docs/adr/0001-ci-access-without-oidc.md), [ADR-0002](docs/adr/0002-terraform-layout-and-state.md)) |
+| `10-network` | VPC, subnets, NAT instance, flow logs, private access ([ADR-0003](docs/adr/0003-network-isolation-and-private-access.md)) |
+| `20-data` | RDS PostgreSQL, its settings and automatic stop ([ADR-0005](docs/adr/0005-database.md)) |
+| `30-app` | App server with Docker, automatic stop ([ADR-0004](docs/adr/0004-servers-and-automatic-stop.md)) |
 
 ## Documentation
 
