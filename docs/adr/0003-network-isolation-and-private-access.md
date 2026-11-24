@@ -14,7 +14,8 @@ network or VPN. The servers still need outbound access for updates, container im
 | app | NAT instance (outbound only), S3 gateway endpoint | app and monitoring servers |
 | db | none (only the VPC's own local route) | RDS |
 
-- **Security groups** name each other instead of IP ranges. The VPC's default group has no rules, and no group accepts anything from the internet.
+- **Security groups:** the app and database groups name each other; the NAT instance accepts only the app subnets' ranges. The VPC's default group
+  has no rules, and no group accepts anything from the internet.
 - **Outbound:** a NAT instance (Amazon Linux with iptables) that forwards only traffic from the two app subnets.
 - **Evidence:** VPC flow logs of all accepted and rejected traffic, in a private S3 bucket, kept 30 days.
 - **Private access:** AWS Systems Manager (SSM) Session Manager. The agent on the server dials out, so no inbound port, public IP, SSH key or

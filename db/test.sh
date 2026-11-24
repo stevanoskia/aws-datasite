@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests the migrations on an empty database: on the server given by PGHOST (the pipeline, PostgreSQL 18), or on a
+# Tests the migrations and the data generator on an empty database: on the server given by PGHOST (the pipeline, PostgreSQL 18), or on a
 # temporary server that is started here and removed afterwards (needs a PostgreSQL server installation).
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -53,6 +53,32 @@ if MIGRATIONS_DIR="$work/broken" bash migrate.sh > /dev/null 2>&1; then fail "a 
 for file in tests/*.sql; do
   psql -X -q -v ON_ERROR_STOP=1 -f "$file" > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "$file"; }
 done
+
+# 5. the generator: correct data, the same data again, also when interrupted
+fingerprint() { psql -X -q -At -v ON_ERROR_STOP=1 -f seed/fingerprint.sql | tr -d '\r'; }
+quiet() { "$@" > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "$*"; }; }
+refused() { if timeout 60 "$@" > /dev/null 2>&1; then fail "this should have been refused: $*"; fi; }
+
+refused bash seed/seed.sh huge
+quiet bash seed/seed.sh small
+quiet psql -X -q -v ON_ERROR_STOP=1 -f seed/checks.sql
+first="$(fingerprint)"
+[ -n "$first" ] || fail "no fingerprint"
+refused bash seed/seed.sh full # another size on top of existing data
+
+quiet bash seed/seed.sh small
+[ "$(fingerprint)" = "$first" ] || fail "running a finished load again changed the data"
+
+quiet psql -X -q -v ON_ERROR_STOP=1 -f seed/reset.sql
+quiet bash seed/seed.sh small 3
+[ "$(count 'select gen.is_complete()')" = "f" ] || fail "an interrupted load counts as complete"
+[ "$(count 'select count(*) from shop.orders')" = "1500" ] || fail "3 batches should be 1500 orders"
+quiet bash seed/seed.sh small
+[ "$(fingerprint)" = "$first" ] || fail "a continued load gives different data"
+
+quiet psql -X -q -v ON_ERROR_STOP=1 -f seed/reset.sql
+psql -X -q -c "insert into shop.categories (name) values ('mine')"
+refused bash seed/seed.sh small # data that the generator did not create
 
 version="$(count 'show server_version_num')"
 psql -X -q -d postgres -c "drop database migration_test"

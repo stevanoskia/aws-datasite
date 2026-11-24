@@ -1,4 +1,4 @@
-# Tests the database migrations on an empty PostgreSQL 18. No AWS access; nothing is deployed.
+# Tests the database migrations and the data generator on an empty PostgreSQL 18. No AWS access; nothing is deployed.
 
 name: db
 
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   test:
-    name: test (migrations)
+    name: test (migrations, data generator)
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -40,5 +40,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Test the migrations
+      - name: Test the migrations and the generator
         run: bash db/test.sh
+
+      - name: Check that the tests notice mistakes
+        if: github.event_name == 'workflow_dispatch'
+        run: python3 db/tests/break_it.py
