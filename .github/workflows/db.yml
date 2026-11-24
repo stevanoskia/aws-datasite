@@ -1,0 +1,44 @@
+# Tests the database migrations on an empty PostgreSQL 18. No AWS access; nothing is deployed.
+
+name: db
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "db/**"
+      - ".github/workflows/db.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (migrations)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 # 18.6
+        env:
+          POSTGRES_PASSWORD: throwaway # exists only inside this job
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: throwaway
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test the migrations
+        run: bash db/test.sh
