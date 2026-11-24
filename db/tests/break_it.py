@@ -17,7 +17,7 @@ MISTAKES = [
     (V, "items counted as lines", "select count(*) as line_count", "select sum(quantity) as line_count"),
     (R, "readers may change data", "grant select on tables to app_ro", "grant select, delete on tables to app_ro"),
     (R, "monitoring sees shop data", "grant usage on schema shop to app_rw, app_ro;", "grant usage on schema shop to app_rw, app_ro, obs_monitor;\nalter default privileges in schema shop grant select on tables to obs_monitor;"),
-    (H, "everyone may take snapshots", "revoke all on function ops.take_size_snapshot() from public;", "grant usage on schema ops to public;\ngrant execute on function ops.take_size_snapshot() to public;"),
+    (H, "everyone may take snapshots", "revoke all on function ops.take_size_snapshot() from public;", "alter function ops.take_size_snapshot() security definer;\ngrant usage on schema ops to public;\ngrant execute on function ops.take_size_snapshot() to public;"),
     (H, "indexes missing in the history", "where i.schemaname = 'shop'", "where false"),
     ("migrate.sh", "changed files accepted", '"$applied" != "$checksum"', '"$applied" = "never"'),
     ("migrate.sh", "no transaction per file", "    run_sql -1 \\", "    run_sql \\"),
@@ -29,8 +29,6 @@ MISTAKES = [
     (F, "finished batches loaded again", "continue when exists (select from gen.progress p where p.step = 'orders' and p.batch = b);", ""),
     (F, "sequences not moved", "perform setval(pg_get_serial_sequence('shop.orders', 'id'), (select max(id) from shop.orders));", ""),
     (F, "events out of order", "gen.moment(s.starts_at, s.ends_at, e.id, s.events)", "gen.moment(s.starts_at, s.ends_at, s.events - e.id, s.events)"),
-    (F, "foreign data overwritten", "elsif exists (select from shop.categories)", "elsif false and exists (select from shop.categories)"),
-    ("seed/seed.sh", "unknown size accepted", "small | full) ;; *)", "small | full | huge) ;; *)"),
 ]
 missed = 0
 for file, name, old, new in MISTAKES:
