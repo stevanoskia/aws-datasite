@@ -63,6 +63,43 @@ run "stops_every_day_and_starts_on_weekdays" {
   }
 }
 
+run "database_role_can_only_start_and_stop_that_database" {
+  variables {
+    name           = "db"
+    instance_ids   = []
+    db_instance_id = "test-db"
+  }
+
+  assert {
+    condition = (
+      length(jsondecode(aws_iam_role_policy.scheduler.policy).Statement) == 1
+      && toset(jsondecode(aws_iam_role_policy.scheduler.policy).Statement[0].Action) == toset(["rds:StartDBInstance", "rds:StopDBInstance"])
+      && toset(jsondecode(aws_iam_role_policy.scheduler.policy).Statement[0].Resource) == toset(["arn:aws:rds:eu-north-1:123456789012:db:test-db"])
+    )
+    error_message = "The role may do more than start and stop exactly this database."
+  }
+
+  assert {
+    condition     = endswith(aws_scheduler_schedule.start.target[0].arn, ":startDBInstance") && endswith(aws_scheduler_schedule.stop.target[0].arn, ":stopDBInstance")
+    error_message = "The database start and stop schedules are mixed up."
+  }
+
+  assert {
+    condition     = jsondecode(aws_scheduler_schedule.stop.target[0].input).DbInstanceIdentifier == "test-db"
+    error_message = "The schedule must name the database."
+  }
+}
+
+run "rejects_servers_and_a_database_together" {
+  command = plan
+
+  variables {
+    db_instance_id = "test-db"
+  }
+
+  expect_failures = [var.instance_ids]
+}
+
 run "rejects_an_empty_list" {
   command = plan
 

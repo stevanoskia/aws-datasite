@@ -44,8 +44,8 @@ Target architecture. Parts marked ✅ exist; the rest is built phase by phase, a
 |---|---|---|
 | `00-bootstrap` | State bucket, alerts topic, budget, CI access | ✅ applied |
 | `10-network` | VPC, subnets, NAT instance, flow logs, SSM access | ✅ applied; isolation evidence still to be written up |
-| `20-data` | RDS PostgreSQL, parameter group, secrets | planned |
-| `30-app` | App host, container registry | in progress: private app server with Docker, automatic stop |
+| `20-data` | RDS PostgreSQL, parameter group, secrets | in progress: private instance, only the app server may connect, automatic stop |
+| `30-app` | App host, container registry | in progress: private app server with Docker ✅, automatic stop ✅ |
 | `40-observability` | Monitoring host | planned |
 
 ## Documentation

@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars (git-ignored) and put in the real value.
+# In CI the same value comes from the repository secret TF_STATE_BUCKET.
+state_bucket = "aws-datasite-tfstate-xxxxxx"

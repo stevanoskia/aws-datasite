@@ -1,5 +1,5 @@
-# Starts and stops EC2 instances on a schedule, to save cost outside working hours.
-# EventBridge Scheduler calls the EC2 API directly, so no Lambda function is needed.
+# Starts and stops EC2 instances or one RDS instance on a schedule, to save cost outside working hours.
+# EventBridge Scheduler calls the AWS API directly, so no Lambda function is needed.
 # The role may start and stop exactly the given instances and nothing else.
 
 data "aws_caller_identity" "current" {}
@@ -8,10 +8,15 @@ data "aws_region" "current" {}
 locals {
   full_name = "${var.name_prefix}-schedule-${var.name}"
 
-  instance_arns = [
-    for id in var.instance_ids :
-    "arn:aws:ec2:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:instance/${id}"
-  ]
+  is_db   = var.db_instance_id != null
+  arn_end = "${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}"
+
+  actions   = local.is_db ? ["rds:StartDBInstance", "rds:StopDBInstance"] : ["ec2:StartInstances", "ec2:StopInstances"]
+  resources = local.is_db ? ["arn:aws:rds:${local.arn_end}:db:${var.db_instance_id}"] : [for id in var.instance_ids : "arn:aws:ec2:${local.arn_end}:instance/${id}"]
+
+  start_target = local.is_db ? "arn:aws:scheduler:::aws-sdk:rds:startDBInstance" : "arn:aws:scheduler:::aws-sdk:ec2:startInstances"
+  stop_target  = local.is_db ? "arn:aws:scheduler:::aws-sdk:rds:stopDBInstance" : "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
+  input        = local.is_db ? jsonencode({ DbInstanceIdentifier = var.db_instance_id }) : jsonencode({ InstanceIds = var.instance_ids })
 }
 
 resource "aws_iam_role" "scheduler" {
@@ -41,8 +46,8 @@ resource "aws_iam_role_policy" "scheduler" {
     Statement = [{
       Sid      = "StartStop"
       Effect   = "Allow"
-      Action   = ["ec2:StartInstances", "ec2:StopInstances"]
-      Resource = local.instance_arns
+      Action   = local.actions
+      Resource = local.resources
     }]
   })
 }
@@ -63,9 +68,9 @@ resource "aws_scheduler_schedule" "start" {
   }
 
   target {
-    arn      = "arn:aws:scheduler:::aws-sdk:ec2:startInstances"
+    arn      = local.start_target
     role_arn = aws_iam_role.scheduler.arn
-    input    = jsonencode({ InstanceIds = var.instance_ids })
+    input    = local.input
   }
 }
 
@@ -80,8 +85,8 @@ resource "aws_scheduler_schedule" "stop" {
   }
 
   target {
-    arn      = "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
+    arn      = local.stop_target
     role_arn = aws_iam_role.scheduler.arn
-    input    = jsonencode({ InstanceIds = var.instance_ids })
+    input    = local.input
   }
 }

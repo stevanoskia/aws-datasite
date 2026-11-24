@@ -9,13 +9,20 @@ variable "name" {
 }
 
 variable "instance_ids" {
-  description = "EC2 instances to start and stop"
+  description = "EC2 instances to start and stop (either these or db_instance_id)"
   type        = list(string)
+  default     = []
 
   validation {
-    condition     = length(var.instance_ids) > 0
-    error_message = "Give at least one instance."
+    condition     = (length(var.instance_ids) > 0) != (var.db_instance_id != null)
+    error_message = "Give either instance_ids or db_instance_id."
   }
+}
+
+variable "db_instance_id" {
+  description = "RDS instance to start and stop (either this or instance_ids)"
+  type        = string
+  default     = null
 }
 
 variable "start_cron" {
