@@ -21,3 +21,4 @@ answers the same questions: what, why, how, alternatives, why this one, drawback
 | [0004](adr/0004-servers-and-automatic-stop.md) | Servers and automatic stop |
 | [0005](adr/0005-database.md) | Database |
 | [0006](adr/0006-application-database-login.md) | The application's database login |
+| [0007](adr/0007-application.md) | Application |

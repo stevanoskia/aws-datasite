@@ -5,7 +5,7 @@ A small internal web application on AWS, used to practise cloud infrastructure, 
 - **Infrastructure:** Terraform, built in reusable modules: a private VPC, EC2, and RDS PostgreSQL on the smallest practical instance.
 - **CI/CD:** GitHub Actions. AWS access goes through two key-only IAM users that can only assume tightly scoped roles (OIDC is blocked in
   this account, see [ADR-0001](docs/adr/0001-ci-access-without-oidc.md)). Tests gate every deploy, and infrastructure changes are applied only after approval.
-- **Workload:** a FastAPI app with parameterized SQL, plus reproducible simulated traffic (k6) with read-heavy and write-heavy patterns.
+- **Workload:** a FastAPI app with parameterized SQL ([ADR-0007](docs/adr/0007-application.md)), plus reproducible simulated traffic (k6) with read-heavy and write-heavy patterns.
 - **Database:** query analysis (`pg_stat_statements`, `EXPLAIN (ANALYZE, BUFFERS)`), indexing strategies, storage growth, maintenance.
 - **Observability:** Prometheus, Grafana and Loki, with dashboards and alerts.
 - **Security:** nothing is publicly reachable; access goes through a private path only.
