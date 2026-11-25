@@ -50,4 +50,5 @@ Target architecture. Parts marked ✅ exist.
 ## Documentation
 
 - [docs/requirements.md](docs/requirements.md): the requirement checklist
+- [docs/schema.md](docs/schema.md): the database schema, its data and its sizes
 - [docs/](docs/README.md): decision records, investigations and runbooks, written as each part is built

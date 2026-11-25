@@ -6,6 +6,7 @@ answers the same questions: what, why, how, alternatives, why this one, drawback
 | Document | What it covers |
 |---|---|
 | [requirements.md](requirements.md) | The requirement checklist (IDs R1–R8, OPT) that every other document refers to |
+| [schema.md](schema.md) | The database: tables, views, roles, generated data and the size baseline |
 | [adr/](adr/) | Decision records, numbered in the order they were made ([template](adr/_template.md)) |
 | [investigations/](investigations/) | PostgreSQL query investigations, one per query ([template](investigations/_template.md)) |
 | [runbooks/](runbooks/) | What to do when an alert fires or a procedure is needed ([template](runbooks/_template.md)) |
