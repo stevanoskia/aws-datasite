@@ -44,9 +44,11 @@ locals {
     # static: only read at start
     "shared_preload_libraries" = { value = "pg_stat_statements,auto_explain", apply_method = "pending-reboot" }
 
+    # Same value as the RDS default: RDS then reports "pending-reboot", and anything else here would show a change in every plan
+    "rds.force_ssl"   = { value = "1", apply_method = "pending-reboot" } # refuse connections without TLS
+    "track_io_timing" = { value = "1", apply_method = "pending-reboot" } # I/O times in plans and statistics
+
     # dynamic
-    "rds.force_ssl"                 = { value = "1" }    # refuse connections without TLS
-    "track_io_timing"               = { value = "1" }    # I/O times in plans and statistics
     "log_min_duration_statement"    = { value = "500" }  # log statements slower than 500 ms
     "auto_explain.log_min_duration" = { value = "500" }  # ... together with their plan
     "auto_explain.log_analyze"      = { value = "0" }    # off: it instruments every statement. On only during an investigation
