@@ -66,6 +66,13 @@ def test_orders_by_status_oldest_first(client, admin):
     assert ids(client.get("/orders", params={"status": "returned", "limit": 10}).json()) == ids(expected)
 
 
+def test_inactive_products_are_not_found(client, admin, new_products):
+    visible, hidden = new_products(1, 1)
+    admin.execute("update shop.products set name = 'Findme' where id = any(%s)", ([visible, hidden],))
+    admin.execute("update shop.products set is_active = false where id = %s", (hidden,))
+    assert ids(client.get("/products", params={"q": "findme"}).json()) == [visible]
+
+
 def test_product_search(client, admin):
     def search(**params):
         return client.get("/products", params={"page_size": 100, **params}).json()
@@ -171,7 +178,10 @@ def test_a_refused_order_changes_nothing(client, admin, new_products, value, pro
     if problem == "inactive product":
         admin.execute("update shop.products set is_active = false where id = %s", (other,))
     before = value("select (select count(*) from shop.orders) + (select count(*) from shop.payments)")
-    assert client.post("/orders", json=order).status_code == status
+    answer = client.post("/orders", json=order)
+    assert answer.status_code == status
+    if problem == "no stock":  # the app's own message: the database's rule is only the second line of defence
+        assert answer.json()["detail"] == f"not enough stock of product {other}"
     assert value("select quantity from shop.inventory where product_id = %s", product) == 10
     assert value("select (select count(*) from shop.orders) + (select count(*) from shop.payments)") == before
 
@@ -224,7 +234,8 @@ def test_impossible_status_changes_are_refused(client, new_products):
     (product,) = new_products(10)
     order_id = client.post("/orders", json=order_of((product, 1))).json()["id"]
     for status in ("pending", "shipped", "delivered", "returned"):
-        assert client.put(f"/orders/{order_id}/status", json={"status": status}).status_code == 409
+        answer = client.put(f"/orders/{order_id}/status", json={"status": status})
+        assert (answer.status_code, answer.json()["detail"]) == (409, f"an order that is pending can't become {status}")
     assert client.put("/orders/999999999/status", json={"status": "paid"}).status_code == 404
 
 
