@@ -20,3 +20,4 @@ answers the same questions: what, why, how, alternatives, why this one, drawback
 | [0003](adr/0003-network-isolation-and-private-access.md) | Network isolation and private access |
 | [0004](adr/0004-servers-and-automatic-stop.md) | Servers and automatic stop |
 | [0005](adr/0005-database.md) | Database |
+| [0006](adr/0006-application-database-login.md) | The application's database login |

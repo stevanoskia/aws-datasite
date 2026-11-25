@@ -45,7 +45,7 @@ Target architecture. Parts marked ✅ exist.
 | `00-bootstrap` | State bucket, alerts topic, budget, CI access ([ADR-0001](docs/adr/0001-ci-access-without-oidc.md), [ADR-0002](docs/adr/0002-terraform-layout-and-state.md)) |
 | `10-network` | VPC, subnets, NAT instance, flow logs, private access ([ADR-0003](docs/adr/0003-network-isolation-and-private-access.md)) |
 | `20-data` | RDS PostgreSQL, its settings and automatic stop ([ADR-0005](docs/adr/0005-database.md)) |
-| `30-app` | App server with Docker, automatic stop ([ADR-0004](docs/adr/0004-servers-and-automatic-stop.md)) |
+| `30-app` | App server with Docker, automatic stop ([ADR-0004](docs/adr/0004-servers-and-automatic-stop.md)), the app's database password ([ADR-0006](docs/adr/0006-application-database-login.md)) |
 
 ## Documentation
 

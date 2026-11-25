@@ -131,6 +131,8 @@ readers are not blocked.
 | `app_ro` | Read `shop` and `ops` |
 | `obs_monitor` | Read server statistics (`pg_monitor`) and `ops`; no table data in `shop` |
 
+The application's login `shop_app` is a member of `app_rw` ([ADR-0006](adr/0006-application-database-login.md)).
+
 ## Generated data
 
 The [generator](../db/seed/functions.sql) runs inside the database, so nothing is uploaded. Every value comes from a hash of the row number and a
@@ -195,7 +197,7 @@ The load took 31 minutes in two runs and used almost all CPU credits of the inst
 | Migrations on an empty PostgreSQL 18.6, twice; a changed and a failing migration | A second run changes nothing; a changed file is refused; a failing file leaves nothing behind |
 | Tables, roles and views ([tests](../db/tests/schema.sql)) | Pass |
 | Generated data, small size ([checks](../db/seed/checks.sql)): totals, skew, time order, repeatability, continuing after a stop | Pass |
-| Deliberate mistakes in the SQL ([list](../db/tests/break_it.py)) | 23 of 23 caught |
+| Deliberate mistakes in the SQL ([list](../db/tests/break_it.py)) | 34 of 34 caught |
 | Full load on RDS | All batches loaded, no error in the database log; order status as designed |
 
 ## Outcome and further improvements
