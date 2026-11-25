@@ -1,5 +1,5 @@
 # Runs every check in one go: on the laptop, in the pre-push hook and in the pipeline.
-# Works in Windows PowerShell 5.1 and PowerShell 7 (Linux). Needs terraform, tflint and git.
+# Works in Windows PowerShell 5.1 and PowerShell 7 (Linux). Needs terraform, tflint, git and Python 3.14.
 # No AWS login, and nothing is created: the Terraform tests use a mocked provider.
 #
 #   .\scripts\check.ps1                 all checks
@@ -104,7 +104,8 @@ function Test-PrivateData {
         foreach ($commit in @(git rev-list origin/main..HEAD)) {
             $short = $commit.Substring(0, 7)
             foreach ($line in @(git show --format=%B --unified=0 --no-color $commit)) {
-                foreach ($name in (Find-PrivateData $line $localSecrets)) { $hits += "commit $short  $name" }
+                # without the diff's own + or -, which would turn a Python decorator into something like an email address
+                foreach ($name in (Find-PrivateData ($line -replace '^[+-]', '') $localSecrets)) { $hits += "commit $short  $name" }
             }
             foreach ($email in @(git show -s --format='%ae%n%ce' $commit)) {
                 if ($email -notmatch '@users\.noreply\.github\.com$') { $hits += "commit $short  author email is not the noreply address" }
@@ -157,9 +158,41 @@ function Test-Terraform {
     }
 }
 
+# -----------------------------------------------------------------------------
+# App: lint, format and the tests that need no database (the others run in the
+# pipeline, against a real PostgreSQL). The libraries are installed into app/.venv.
+# -----------------------------------------------------------------------------
+
+function Test-App {
+    $venv = Join-Path $root 'app/.venv'
+    $stamp = Join-Path $venv 'requirements.sha256'
+    $wanted = @('app/requirements.txt', 'app/requirements-dev.txt' | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash }) -join ' '
+    $python = @('Scripts/python.exe', 'bin/python' | ForEach-Object { Join-Path $venv $_ }) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+    if (-not $python -or -not (Test-Path $stamp) -or (Get-Content $stamp -Raw).Trim() -ne $wanted) {
+        $system = @('python3', 'python' | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue }) | Select-Object -Last 1
+        if (-not $python) {
+            $ok = Invoke-Tool $system @('-m', 'venv', $venv)
+            if (-not $ok) { Add-Result 'app environment' $false $script:output; return }
+            $python = @('Scripts/python.exe', 'bin/python' | ForEach-Object { Join-Path $venv $_ }) | Where-Object { Test-Path $_ } | Select-Object -First 1
+        }
+        $ok = Invoke-Tool $python @('-m', 'pip', 'install', '-q', '--disable-pip-version-check', '--require-hashes', '-r', 'app/requirements.txt', '-r', 'app/requirements-dev.txt')
+        if (-not $ok) { Add-Result 'app environment' $false $script:output; return }
+        Set-Content -Path $stamp -Value $wanted -Encoding ascii
+    }
+
+    $ok = Invoke-Tool $python @('-m', 'ruff', 'check', 'app')
+    Add-Result 'app lint' $ok $script:output
+    $ok = Invoke-Tool $python @('-m', 'ruff', 'format', '--check', 'app')
+    Add-Result 'app format' $ok $script:output
+    $ok = Invoke-Tool $python @('-m', 'pytest', '-c', 'app/pyproject.toml', '--rootdir', 'app', '-p', 'no:cacheprovider', 'app/tests/unit')
+    $summary = @($script:output | Where-Object { $_ -match '\d+ (passed|failed|error)' }) | Select-Object -Last 1
+    Add-Result "app tests without database  $summary" $ok $script:output
+}
+
 Write-Host 'Checks:'
 Test-PrivateData
-if (-not $PrivateOnly) { Test-Terraform }
+if (-not $PrivateOnly) { Test-Terraform; Test-App }
 
 $failed = @($script:results | Where-Object { -not $_.Passed })
 Write-Host ''

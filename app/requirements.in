@@ -1,0 +1,7 @@
+fastapi
+psycopg[binary]
+psycopg-pool
+prometheus-client
+uvicorn
+uvloop; sys_platform != "win32"
+httptools

@@ -45,6 +45,10 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
       # The tflint action's publisher is not a verified creator, so download the binary
       # and check it against the release's published checksum instead
       - name: Install tflint
