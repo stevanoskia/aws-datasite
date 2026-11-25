@@ -2,6 +2,7 @@
 #
 #   data.network       reads the outputs of 10-network (subnet, security group)
 #   module.app_host    private server with Docker
+#   module.db_secret   the app's database password, readable by this server only
 #   module.schedule    weekdays 07:00-19:00 only
 
 data "terraform_remote_state" "network" {
@@ -27,6 +28,17 @@ module "app_host" {
   subnet_id                = data.terraform_remote_state.network.outputs.app_subnet_ids[var.instance_az_index]
   security_group_id        = data.terraform_remote_state.network.outputs.app_security_group_id
   permissions_boundary_arn = data.aws_iam_policy.boundary.arn
+}
+
+# Filled by db/set_app_password.py
+module "db_secret" {
+  source = "../../modules/app-secret"
+
+  name_prefix      = var.project
+  name             = "app-db"
+  description      = "Database login of the app, set by db/set_app_password.py"
+  reader_role_name = module.app_host.role_name
+  reader_role_arn  = module.app_host.role_arn
 }
 
 module "schedule" {

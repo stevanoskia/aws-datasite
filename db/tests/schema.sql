@@ -61,6 +61,16 @@ select pg_temp.expect(ops.take_size_snapshot() = (
 select pg_temp.expect((select count(*) = 1 and min(bytes) > 0 from ops.size_history where kind = 'table' and relation = 'orders'), 'the orders table is in the snapshot');
 select pg_temp.expect((select count(*) = 1 from ops.size_history where kind = 'index' and relation = 'orders_pkey' and table_name = 'orders'), 'the index is linked to its table');
 
+-- the app's login is an ordinary member of app_rw, and nothing more
+select pg_temp.expect((
+  select rolcanlogin and not (rolsuper or rolcreaterole or rolcreatedb or rolreplication or rolbypassrls) and rolconnlimit between 1 and 70
+  from pg_roles where rolname = 'shop_app'
+), 'shop_app may log in, has no special rights and cannot take all connections');
+select pg_temp.expect((
+  select array_agg(roleid::regrole::text) = '{app_rw}' and not bool_or(admin_option)
+  from pg_auth_members where member = 'shop_app'::regrole
+), 'shop_app is a member of app_rw only');
+
 -- rights: app_ro only reads, app_rw changes data but not tables, obs_monitor sees no shop data
 set local role app_ro;
 select pg_temp.expect((select count(*) = 1 from shop.customers), 'app_ro can read');

@@ -12,3 +12,8 @@ output "role_name" {
   description = "IAM role of the server"
   value       = aws_iam_role.host.name
 }
+
+output "role_arn" {
+  description = "ARN of the IAM role of the server"
+  value       = aws_iam_role.host.arn
+}

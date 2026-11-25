@@ -4,6 +4,7 @@ import os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 T, V, R, H = "migrations/0002_tables.sql", "migrations/0003_views.sql", "migrations/0001_roles_and_extensions.sql", "migrations/0004_size_history.sql"
+L, P = "migrations/0005_app_login.sql", "set_app_password.py"
 F = "seed/functions.sql"
 MISTAKES = [
     (T, "orders without foreign key", "bigint not null references shop.customers (id),\n  status", "bigint not null,\n  status"),
@@ -21,6 +22,17 @@ MISTAKES = [
     (H, "indexes missing in the history", "where i.schemaname = 'shop'", "where false"),
     ("migrate.sh", "changed files accepted", '"$applied" != "$checksum"', '"$applied" = "never"'),
     ("migrate.sh", "no transaction per file", "    run_sql -1 \\", "    run_sql \\"),
+    (L, "app login may create roles", "login connection", "login createrole connection"),
+    (L, "app login without connection limit", " connection limit 60", ""),
+    (L, "app login without rights", "grant app_rw to shop_app;", ""),
+    (L, "app login also monitors", "grant app_rw to", "grant app_rw, obs_monitor to"),
+    (L, "app login passes its rights on", "to shop_app;", "to shop_app with admin option;"),
+    (P, "wrong verifier", 'b"Client Key"', 'b"Server Key"'),
+    (P, "always the same password", "secrets.token_urlsafe(32)", '"always-the-same"'),
+    (P, "password printed", "login tested", "login tested {password}"),
+    (P, "password on the command line", 'f"file://{path}")', 'f"file://{path}", "--description", password)'),
+    (P, "another password stored", '"password": password}', '"password": password[:-1]}'),
+    (P, "database changed before the secret is checked", 'stop_if_failed(aws("describe-secret", "--secret-id", SECRET)', 'print(aws("describe-secret", "--secret-id", SECRET).returncode'),
     (F, "real randomness", "select ((hashint8extended(id, seed * 1000003 + salt) >> 11) & 9007199254740991)::double precision / 9007199254740992.0", "select random() + 0 * id * seed * salt"),
     (F, "no whales", "gen.r(seed, salt, id) < 0.10 then", "gen.r(seed, salt, id) < 0 then"),
     (F, "products evenly popular", "power(gen.r(seed, salt, id), 3)", "gen.r(seed, salt, id)"),

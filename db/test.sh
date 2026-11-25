@@ -18,16 +18,18 @@ if [ -z "${PGHOST:-}" ]; then
       if [ -x "$bin/initdb" ] || [ -x "$bin/initdb.exe" ]; then PATH="$bin:$PATH"; fi
     done
   fi
-  export PGHOST=127.0.0.1 PGPORT=54329 PGUSER=tester
-  initdb -D "$work/data" -U tester -A trust -E UTF8 --locale=C > "$work/initdb.log" 2>&1
+  export PGHOST=127.0.0.1 PGPORT=54329 PGUSER=tester PGPASSWORD=tester
+  echo tester > "$work/password"
+  initdb -D "$work/data" -U tester -A scram-sha-256 --pwfile="$work/password" -E UTF8 --locale=C > "$work/initdb.log" 2>&1
   pg_ctl -D "$work/data" -l "$work/server.log" -w -o "-p $PGPORT -c listen_addresses=127.0.0.1 -c fsync=off" start > /dev/null
   started=yes
 fi
 
 export PGOPTIONS="-c client_min_messages=warning"
-psql -X -q -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists migration_test" -c "create database migration_test"
+psql -X -q -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists migration_test" -c "drop role if exists shop_app" -c "create database migration_test"
 export PGDATABASE=migration_test
 fail() { echo "FAILED: $1" >&2; exit 1; }
+refused() { if "$@" > /dev/null 2>&1; then fail "this should have been refused: $1 ${2:-}"; fi; }
 count() { psql -X -At -v ON_ERROR_STOP=1 -c "$1" | tr -d '\r'; }
 
 # 1. all migrations run on an empty database, and a second run changes nothing
@@ -54,17 +56,56 @@ for file in tests/*.sql; do
   psql -X -q -v ON_ERROR_STOP=1 -f "$file" > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "$file"; }
 done
 
-# 5. the generator: correct data, the same data again, also when interrupted
+# 5. the application's login: useless without a password, then only the stored password works
+as_app() { PGUSER=shop_app PGPASSWORD="$1" psql -X -q -At -w -v ON_ERROR_STOP=1 -c "$2" 2>&1 | tr -d '\r'; }
+stored() { python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['password'])" "$work/stored.json"; }
+
+mkdir "$work/bin"
+cat > "$work/bin/aws" << 'EOF' # stands in for the AWS CLI: keeps its arguments and the stored value
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_AWS/arguments.log"
+if [ -e "$FAKE_AWS/secret_missing" ]; then exit 1; fi
+for argument in "$@"; do
+  case "$argument" in file://*) cp "${argument#file://}" "$FAKE_AWS/stored.json" ;; esac
+done
+EOF
+chmod +x "$work/bin/aws"
+export FAKE_AWS="$work"
+set_password() { PATH="$work/bin:$PATH" python3 set_app_password.py; }
+
+refused as_app anything "select 1"
+set_password > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "the password could not be set"; }
+[ -e "$work/stored.json" ] || fail "the password was not stored"
+first_password="$(stored)"
+[ "$(as_app "$first_password" "select current_user")" = "shop_app" ] || fail "the stored password does not work"
+refused as_app wrong "select 1"
+if grep -qF -e "$first_password" "$work/out.log" "$work/arguments.log"; then fail "the password was shown or on a command line"; fi
+if [ "$(count "select left(rolpassword, 14) from pg_authid where rolname = 'shop_app'")" != 'SCRAM-SHA-256$' ]; then fail "the password is not kept as a SCRAM verifier"; fi
+
+as_app "$first_password" "insert into shop.events (event_type, session_id) values ('login', gen_random_uuid())" > /dev/null || fail "the app cannot write data"
+refused as_app "$first_password" "create table shop.x (id int)"
+psql -X -q -c "truncate shop.events restart identity"
+
+touch "$work/secret_missing"
+refused set_password
+rm "$work/secret_missing"
+as_app "$first_password" "select 1" > /dev/null || fail "the password was changed although the secret could not be reached"
+
+set_password > /dev/null 2>&1 || fail "the password could not be changed"
+second_password="$(stored)"
+[ "$second_password" != "$first_password" ] || fail "the new password is the old one"
+refused as_app "$first_password" "select 1"
+as_app "$second_password" "select 1" > /dev/null || fail "the changed password does not work"
+
+# 6. the generator: correct data, the same data again, also when interrupted
 fingerprint() { psql -X -q -At -v ON_ERROR_STOP=1 -f seed/fingerprint.sql | tr -d '\r'; }
 quiet() { "$@" > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "$*"; }; }
-refused() { if timeout 60 "$@" > /dev/null 2>&1; then fail "this should have been refused: $*"; fi; }
-
-refused bash seed/seed.sh huge
+refused timeout 60 bash seed/seed.sh huge
 quiet bash seed/seed.sh small
 quiet psql -X -q -v ON_ERROR_STOP=1 -f seed/checks.sql
 first="$(fingerprint)"
 [ -n "$first" ] || fail "no fingerprint"
-refused bash seed/seed.sh full # another size on top of existing data
+refused timeout 60 bash seed/seed.sh full # another size on top of existing data
 
 quiet bash seed/seed.sh small
 [ "$(fingerprint)" = "$first" ] || fail "running a finished load again changed the data"
@@ -78,8 +119,8 @@ quiet bash seed/seed.sh small
 
 quiet psql -X -q -v ON_ERROR_STOP=1 -f seed/reset.sql
 psql -X -q -c "insert into shop.categories (name) values ('mine')"
-refused bash seed/seed.sh small # data that the generator did not create
+refused timeout 60 bash seed/seed.sh small # data that the generator did not create
 
 version="$(count 'show server_version_num')"
-psql -X -q -d postgres -c "drop database migration_test"
+psql -X -q -d postgres -c "drop database migration_test" -c "drop role shop_app"
 echo "database tests passed (PostgreSQL ${version:0:2}, $files migrations)"
