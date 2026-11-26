@@ -75,7 +75,7 @@ resource "aws_iam_role_policy" "deploy" {
         Sid      = "RunOnlyTheDeployScript"
         Effect   = "Allow"
         Action   = "ssm:SendCommand"
-        Resource = "arn:aws:ssm:${local.arn_end}:document/${var.name_prefix}-deploy"
+        Resource = "arn:aws:ssm:${local.arn_end}:document/${var.deploy_document_name}"
       },
       {
         # ... and the server must be the app server

@@ -181,6 +181,7 @@ resource "aws_budgets_budget" "monthly" {
 module "ci_access" {
   source = "../../modules/ci-access"
 
-  name_prefix      = var.project
-  state_bucket_arn = aws_s3_bucket.state.arn
+  name_prefix          = var.project
+  state_bucket_arn     = aws_s3_bucket.state.arn
+  deploy_document_name = "datasite-deploy" # made by 30-app (module app-deploy)
 }

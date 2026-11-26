@@ -3,6 +3,16 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "document_prefix" {
+  description = "Prefix of the SSM document names, e.g. datasite (gives datasite-deploy, datasite-migrate)"
+  type        = string
+
+  validation {
+    condition     = !can(regex("^(aws|amazon|amzn)", lower(var.document_prefix)))
+    error_message = "SSM document names that start with aws, amazon or amzn are reserved by AWS (CreateDocument fails)."
+  }
+}
+
 variable "host_role_name" {
   description = "IAM role of the app server, which pulls the images and runs the scripts"
   type        = string

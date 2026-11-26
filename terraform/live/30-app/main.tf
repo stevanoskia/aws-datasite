@@ -58,6 +58,7 @@ module "deploy" {
   source = "../../modules/app-deploy"
 
   name_prefix          = var.project
+  document_prefix      = "datasite" # SSM document names that start with "aws" are reserved
   host_role_name       = module.app_host.role_name
   db_address_parameter = "/datasite/db/address" # made by 20-data
   app_secret_name      = module.db_secret.name

@@ -12,8 +12,9 @@ mock_provider "aws" {
 }
 
 variables {
-  name_prefix      = "test"
-  state_bucket_arn = "arn:aws:s3:::test-state"
+  name_prefix          = "test"
+  state_bucket_arn     = "arn:aws:s3:::test-state"
+  deploy_document_name = "test-deploy"
 }
 
 run "users_can_only_assume_their_own_role" {

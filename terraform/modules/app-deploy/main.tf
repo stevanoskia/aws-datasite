@@ -95,7 +95,7 @@ resource "aws_iam_role_policy" "host" {
 resource "aws_ssm_document" "this" {
   for_each = local.scripts
 
-  name            = "${var.name_prefix}-${each.key}"
+  name            = "${var.document_prefix}-${each.key}"
   document_type   = "Command"
   document_format = "JSON"
 

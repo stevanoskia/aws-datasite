@@ -18,6 +18,7 @@ mock_provider "aws" {
 
 variables {
   name_prefix          = "test"
+  document_prefix      = "testshop"
   host_role_name       = "test-app"
   db_address_parameter = "/test/db/address"
   app_secret_name      = "test/app-db"
@@ -95,6 +96,23 @@ run "the_server_may_pull_from_this_registry_only" {
     ], "arn:aws:ssm:eu-north-1:123456789012:parameter/test/db/address")
     error_message = "The server may read the database address parameter, and only that one."
   }
+}
+
+run "the_documents_are_named_after_their_prefix" {
+  assert {
+    condition     = aws_ssm_document.this["deploy"].name == "testshop-deploy" && aws_ssm_document.this["migrate"].name == "testshop-migrate"
+    error_message = "The documents must be called <document_prefix>-deploy and <document_prefix>-migrate: the deploy user's rights name them."
+  }
+}
+
+run "rejects_a_reserved_document_prefix" {
+  command = plan
+
+  variables {
+    document_prefix = "Amazon-shop"
+  }
+
+  expect_failures = [var.document_prefix]
 }
 
 run "rejects_a_reserved_parameter_name" {

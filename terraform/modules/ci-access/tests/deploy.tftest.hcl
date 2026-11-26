@@ -13,8 +13,9 @@ mock_provider "aws" {
 }
 
 variables {
-  name_prefix      = "test"
-  state_bucket_arn = "arn:aws:s3:::test-state"
+  name_prefix          = "test"
+  state_bucket_arn     = "arn:aws:s3:::test-state"
+  deploy_document_name = "test-deploy"
 }
 
 run "the_user_can_only_assume_its_role" {
@@ -73,6 +74,16 @@ run "nothing_else" {
     ]) == toset(["arn:aws:ecr:eu-north-1:123456789012:repository/test/app"])
     error_message = "Images may be pushed to the app's repository only."
   }
+}
+
+run "rejects_a_reserved_document_name" {
+  command = plan
+
+  variables {
+    deploy_document_name = "aws-shop-deploy"
+  }
+
+  expect_failures = [var.deploy_document_name]
 }
 
 run "the_deploy_user_and_role_are_protected_from_the_apply_role" {
