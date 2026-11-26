@@ -48,7 +48,7 @@ answering="$running"
 if [ -e "$FAKE/stale" ]; then answering="$(cat "$FAKE/stale")"; fi
 case "$*" in
   *"/health"*) echo "{\"status\":\"ok\",\"version\":\"$answering\"}" ;;
-  *"/orders"*) [ -e "$FAKE/no_data" ] && exit 22; exit 0 ;;
+  *"/customers/1"*) [ -e "$FAKE/no_data" ] && exit 22; exit 0 ;;
 esac
 """
 AWS = f"""

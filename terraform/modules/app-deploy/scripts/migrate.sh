@@ -7,6 +7,7 @@
 # Everything this script prints stays in AWS (SSM command output); it never reaches the pipeline log.
 set -euo pipefail
 umask 077
+export HOME=/root # SSM runs without one; docker login keeps its login there
 
 tag="{{ ImageTag }}"
 image="$REPOSITORY:migrate-$tag"

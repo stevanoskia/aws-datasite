@@ -10,6 +10,7 @@
 # Everything this script prints stays in AWS (SSM command output); it never reaches the pipeline log.
 set -euo pipefail
 umask 077
+export HOME=/root # SSM runs without one; docker login keeps its login there
 
 tag="{{ ImageTag }}"
 image="$REPOSITORY:$tag"
@@ -57,7 +58,7 @@ start() {
 healthy() {
   for _ in $(seq 1 30); do
     if curl -fsS --max-time 3 "http://127.0.0.1:$PORT/health" | grep -qF "\"version\":\"$1\"" \
-      && curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:$PORT/orders?status=pending&limit=1"; then
+      && curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:$PORT/customers/1"; then # a real query, by key: fast
       return 0
     fi
     sleep 2
