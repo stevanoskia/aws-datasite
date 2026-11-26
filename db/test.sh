@@ -98,7 +98,11 @@ refused as_app "$first_password" "select 1"
 as_app "$second_password" "select 1" > /dev/null || fail "the changed password does not work"
 
 # 6. the migration login: later migrations run as shop_migrate, and what it creates the app can use, but not change
-refused set_password --role postgres # the script never sets an administrator's password
+# The script never sets an administrator's password. Asked against a port where nothing listens: if this check
+# is ever broken, the administrator's password must not really change
+if PGPORT=1 set_password --role postgres > "$work/out.log" 2>&1 || ! grep -q "invalid choice" "$work/out.log"; then
+  fail "the script accepts an administrator's login"
+fi
 set_password --role shop_migrate > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "the migration login's password could not be set"; }
 grep -q '"username": "shop_migrate"' "$work/stored.json" || fail "the migration login's password was stored under another name"
 migrate_password="$(stored)"
