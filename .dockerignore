@@ -1,0 +1,7 @@
+# The images get only what they need (see app/Dockerfile); nothing private can slip in
+*
+!app/requirements.txt
+!app/shop/
+!db/migrate.sh
+!db/migrations/
+**/__pycache__
