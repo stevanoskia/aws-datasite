@@ -23,7 +23,7 @@ RUN chmod 0644 /app/rds-ca.pem \
  && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 USER 10001
 EXPOSE 8000
-CMD ["python", "-m", "shop.server"]
+CMD ["python", "-m", "shop.server_rehearsal_broken"]
 
 # --- The migrations -----------------------------------------------------------------------
 FROM postgres:18.6@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 AS migrate
