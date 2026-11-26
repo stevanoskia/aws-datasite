@@ -35,6 +35,25 @@ database, behave correctly under parallel requests, and run on a small server.
 | `POST /products/{id}/reviews`, `POST /events` | Single inserts |
 | `GET /health`, `GET /metrics` | State of the database connection; Prometheus metrics |
 
+## Pages
+
+Four pages for people, drawn on the server from the same statements as the API ([`service.py`](../../app/shop/service.py)): HTML templates and
+one style sheet, no JavaScript and no frontend framework. The load tests use the API, not the pages.
+
+| Page | Shows | Statements |
+|---|---|---|
+| `/shop` | Product search by name, color and category, 20 per page | 1 |
+| `/shop/products/{id}` | A product, its stock and rating, the newest 10 reviews | 2 |
+| `/shop/order` | A form that places a real order (stock, order, line, payment) | 5 |
+| `/shop/history` | A customer's orders, newest first, 20 per page | 2 |
+
+**Each page ends with what it cost:** the number of statements, the time in the database, and the request ID, which is also in the log line.
+For a customer with many orders the history shows the cost of a missing index directly.
+
+**Safety:** every value is escaped when the page is drawn, so a product name or review can't run code in the browser. A form sent by another
+web page in the same browser is refused (the browser's `Origin` and `Sec-Fetch-Site` headers). After an order the browser is sent to a new
+page, so that reloading can't place it twice.
+
 ## What can be observed
 
 | Where | What |
@@ -69,12 +88,13 @@ strings and messages of database errors are not logged, because they can contain
 | Check | Result |
 |---|---|
 | 25 tests without a database: settings, refused input, behaviour without a database | Pass |
-| 31 tests on PostgreSQL 18 with the real migrations and generated data, logged in as `shop_app` | Pass |
+| 49 tests on PostgreSQL 18 with the real migrations and generated data, logged in as `shop_app`, the pages included | Pass |
 | 12 parallel orders for the last 5 items | 5 sold, 7 refused, stock 0 |
 | 80 parallel orders with the same products in opposite order | All succeed, no deadlock |
 | 6 parallel cancellations of one order | One succeeds, stock given back once |
 | Statement timeout, full pool, lost connection with a changed password | 504, 503, 503; works again afterwards |
-| Deliberate mistakes in the code ([list](../../app/tests/break_it.py)) | 39 of 39 caught |
+| Deliberate mistakes in the code ([list](../../app/tests/break_it.py)) | 47 of 47 caught |
+| Pages: same results as the API, values escaped, orders from another site refused, cost shown | Pass |
 
 The first run of the deliberate mistakes caught 36. Two of the others were also stopped by the database's own rules, and one showed a missing
 test (inactive products in the search); the tests were extended.

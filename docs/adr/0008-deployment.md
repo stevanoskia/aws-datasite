@@ -46,8 +46,9 @@ container can't reach that role: the metadata service answers only one network h
 - **Short downtime:** the old container is stopped before the new one starts, so a deploy takes the app away for a few seconds.
 - **Migrations are forward only.** A version is refused only when the database lacks one of its migrations. An older version must also work
   with newer tables. A change that can't be undone by a new migration needs the snapshot.
-- **Migration detection compares the push with the previous one.** A migration that failed earlier is caught by the deploy itself
-  (exit 10), and is then started by hand.
+- **Migration detection compares the push with the previous one;** a run started by hand migrates only when asked to. Before the snapshot
+  the pipeline waits until the database is available: during its daily backup it refuses snapshots.
+- **The comparison doesn't notice a migration that failed earlier:** the deploy then refuses (exit 10), and the migration is started by hand.
 - **The server must be running:** a deploy outside the server's hours is refused at once.
 - **Any built version can be deployed** by the deploy user, older ones included. That is how a rollback works.
 - **The registry login** is stored on the server for 12 hours in root's home folder, unencrypted (Docker's default).
