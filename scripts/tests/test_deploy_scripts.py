@@ -85,6 +85,7 @@ class Server:
                     "install": 'mkdir -p "${@: -1}"', "python3": f'"{Path(python).as_posix()}" "$@"'}  # fmt: skip
         for name, body in programs.items():
             (self.bin / name).write_text(f"#!/usr/bin/env bash\n{body}\n", newline="\n")
+            (self.bin / name).chmod(0o755)  # Linux runs only executable files (Windows doesn't check)
         self.values = {**settings(), "REPOSITORY": REPOSITORY, "REGION": "eu-north-1", "DB_ADDRESS_PARAMETER": "/test/db/address",
                        "STATE": self.state.as_posix(), "RUN_DIR": self.run_dir.as_posix(), "APP_UID": "10001", "CONTAINER": "test-app",
                        "PORT": "8000", "APP_SECRET": "test/app-db", "MIGRATE_SECRET": "test/migrate-db"}  # fmt: skip

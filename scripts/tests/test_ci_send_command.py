@@ -31,6 +31,7 @@ esac
 def fake(tmp_path):
     (tmp_path / "bin").mkdir()
     (tmp_path / "bin/aws").write_text(f"#!/usr/bin/env bash\n{AWS}\n", newline="\n")
+    (tmp_path / "bin/aws").chmod(0o755)  # Linux runs only executable files (Windows doesn't check)
     for name, value in {"online": "1", "status": "Success", "code": "0"}.items():
         (tmp_path / name).write_text(value + "\n")
     return tmp_path
