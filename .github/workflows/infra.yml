@@ -4,6 +4,7 @@
 # - Plans every stack in terraform/live in number order, except 00-bootstrap (applied by hand only, see ADR-0001).
 # - If any stack has changes, the apply job waits for approval in the "production" environment,
 #   then applies exactly the plans that were reviewed (saved, encrypted, passed between jobs).
+# - Logs of a public repository are public: Terraform's output goes through scripts/safe_log.py before it is printed.
 # - AWS access: access keys of key-only IAM users that can only assume their role (OIDC is blocked, ADR-0001).
 
 name: infra
@@ -13,7 +14,7 @@ on:
     branches: [main]
     paths:
       - "terraform/**"
-      - "scripts/check.ps1"
+      - "scripts/**"
       - ".github/workflows/infra.yml"
   workflow_dispatch:
 
@@ -102,24 +103,32 @@ jobs:
           # Inputs that must not be in the repo come from secrets as TF_VAR_* (variables marked sensitive)
           TF_VAR_operator_allowed_cidrs: ${{ secrets.OPERATOR_ALLOWED_CIDRS }}
           TF_VAR_state_bucket: ${{ secrets.TF_STATE_BUCKET }}
+          OPERATOR_ALLOWED_CIDRS: ${{ secrets.OPERATOR_ALLOWED_CIDRS }}
         run: |
           set -euo pipefail
+          source scripts/ci_private_values.sh
           mkdir -p plans
           changed=""
+          leak=""
           for dir in terraform/live/*/; do
             stack="$(basename "$dir")"
             if [ "$stack" = "00-bootstrap" ]; then continue; fi # applied by hand only
 
             printf 'bucket = "%s"\nkey = "%s/terraform.tfstate"\nregion = "%s"\nuse_lockfile = true\nencrypt = true\n' \
               "$TF_STATE_BUCKET" "$stack" "$AWS_REGION" > "$dir/backend.hcl"
-            terraform -chdir="$dir" init -backend-config=backend.hcl > /dev/null
+            terraform -chdir="$dir" init -no-color -backend-config=backend.hcl > init.txt 2>&1 \
+              || { python3 scripts/safe_log.py < init.txt; exit 1; }
 
             # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes
             set +e
             terraform -chdir="$dir" plan -no-color -lock-timeout=5m -detailed-exitcode \
-              -out="$GITHUB_WORKSPACE/plans/$stack.tfplan" > "plans/$stack.txt" 2>&1
+              -out="$GITHUB_WORKSPACE/plans/$stack.tfplan" > "plans/$stack.raw" 2>&1
             rc=$?
+            python3 scripts/safe_log.py < "plans/$stack.raw" > "plans/$stack.txt"
+            filter=$?
             set -e
+            rm -f "plans/$stack.raw"
+            if [ "$filter" -ne 0 ]; then leak="$leak $stack"; fi
             echo "::group::plan $stack"; cat "plans/$stack.txt"; echo "::endgroup::"
 
             if [ "$rc" -eq 1 ]; then echo "::error::plan failed for $stack"; exit 1; fi
@@ -132,6 +141,7 @@ jobs:
               grep -E '^  # ' "plans/$stack.txt" | sed 's/^  # /- /' || true
             } >> "$GITHUB_STEP_SUMMARY"
           done
+          if [ -n "$leak" ]; then echo "::error::private data in the plan of:$leak (hidden, nothing was changed)"; exit 1; fi
           echo "changed=$(echo "$changed" | xargs)" >> "$GITHUB_OUTPUT"
 
       # Saved plans can contain sensitive values, and artifacts of a public repository can be
@@ -200,16 +210,28 @@ jobs:
         env:
           TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
           CHANGED: ${{ needs.plan.outputs.changed }}
+          OPERATOR_ALLOWED_CIDRS: ${{ secrets.OPERATOR_ALLOWED_CIDRS }}
         run: |
           set -euo pipefail
+          source scripts/ci_private_values.sh
+          leak=""
           for stack in $CHANGED; do
             dir="terraform/live/$stack"
             printf 'bucket = "%s"\nkey = "%s/terraform.tfstate"\nregion = "%s"\nuse_lockfile = true\nencrypt = true\n' \
               "$TF_STATE_BUCKET" "$stack" "$AWS_REGION" > "$dir/backend.hcl"
-            terraform -chdir="$dir" init -backend-config=backend.hcl > /dev/null
+            terraform -chdir="$dir" init -no-color -backend-config=backend.hcl > init.txt 2>&1 \
+              || { python3 scripts/safe_log.py < init.txt; exit 1; }
             echo "::group::apply $stack"
-            # A saved plan is refused if the state changed since it was made ("stale plan")
-            terraform -chdir="$dir" apply -no-color -lock-timeout=5m "$GITHUB_WORKSPACE/plans/$stack.tfplan"
+            # A saved plan is refused if the state changed since it was made ("stale plan").
+            # A hidden line doesn't stop the apply: half-built is worse. The run fails at the end instead
+            set +e
+            terraform -chdir="$dir" apply -no-color -lock-timeout=5m "$GITHUB_WORKSPACE/plans/$stack.tfplan" 2>&1 \
+              | python3 scripts/safe_log.py
+            codes=("${PIPESTATUS[@]}")
+            set -e
             echo "::endgroup::"
+            if [ "${codes[1]}" -ne 0 ]; then leak="$leak $stack"; fi
+            if [ "${codes[0]}" -ne 0 ]; then echo "::error::apply failed for $stack"; exit 1; fi
             echo "### $stack: applied" >> "$GITHUB_STEP_SUMMARY"
           done
+          if [ -n "$leak" ]; then echo "::error::private data in the output of:$leak (hidden, the changes are applied)"; exit 1; fi

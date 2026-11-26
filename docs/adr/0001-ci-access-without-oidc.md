@@ -48,6 +48,21 @@ GitHub secret (access key) ─▶ IAM user ─(sts:AssumeRole only)─▶ IAM ro
 - No AWS jobs run on `pull_request`. Fork pull requests never receive secrets, and their workflows need approval before they run at all.
 - `GITHUB_TOKEN` is read-only by default, and the account ID is masked in logs.
 
+**Public logs.** Anyone signed in to GitHub can read the logs of a public repository, for 90 days. GitHub masks a secret only as a whole and
+exactly as stored, so it misses parts of a secret (one address of a list) and values that are no secret (a database address). So Terraform's
+output goes through a [filter](../../scripts/safe_log.py) before it is printed:
+
+| Kind of value | Example | Treatment |
+|---|---|---|
+| Expected, known in the run | Account ID in an ARN, state bucket | Replaced by `***` |
+| Known, must never appear | Allowed office addresses, each one also as a GitHub mask | Line hidden |
+| Unknown, but recognisable by its shape | Other account IDs, AWS and GitHub keys, private keys, emails, public IP addresses, database addresses | Line hidden |
+
+A hidden line makes `plan` fail, before anything can be applied. An `apply` is finished first and then marked as failed: stopping it halfway
+would leave resources half built. The values come from the run itself ([`ci_private_values.sh`](../../scripts/ci_private_values.sh)) and stay inside
+the step, because GitHub prints a step's environment at its start. Outputs that name internal resources are marked `sensitive`.
+A [scan of the finished logs](../../scripts/scan_run_logs.py) reports what the filter missed.
+
 Code: [`terraform/modules/ci-access`](../../terraform/modules/ci-access/main.tf), used by [`terraform/live/00-bootstrap`](../../terraform/live/00-bootstrap/main.tf).
 
 ## Alternatives considered
@@ -74,6 +89,8 @@ Code: [`terraform/modules/ci-access`](../../terraform/modules/ci-access/main.tf)
 - **An approval is needed for every `apply`.** That is deliberate (R2.5): a human checks every infrastructure change. Application deploys
   don't use the apply key's infrastructure path and run automatically.
 - **Cost:** IAM is free.
+- **The log filter only knows what it is told or what it can recognise.** A secret without a typical shape, or a value that is encoded or split
+  over two lines, would pass. The protection is therefore that the pipeline never holds the database passwords at all.
 
 ## Validation
 Applied on 2026-11-20 (`00-bootstrap`, 23 resources). Read-only checks afterwards: both roles exist with 1-hour sessions, the boundary policy
@@ -109,6 +126,15 @@ First real pipeline run, 2026-11-20 (`infra` workflow, stack `10-network`, 2 res
 Found during that run: GitHub refuses changes to `.github/workflows/*` pushed with a **deploy key** (it has no `workflow` permission).
 Workflow changes are therefore pushed over HTTPS with the owner's `gh` login (scope `workflow`); everything else uses the repository-scoped deploy key.
 This adds a stronger credential for the most sensitive files, the ones that decide what runs with the secrets.
+
+Log filter, 2026-11-26:
+
+| Check | Result |
+|---|---|
+| Tests of the filter, and of the workflow's own plan and apply scripts with stand-ins for `terraform`, `aws` and `jq` | 43 pass |
+| Deliberate mistakes in the filter, the workflow and the value script | 37 of 37 caught (35 in the first round: two tests were too weak) |
+| Today's real plans of all stacks through the filter | Every account ID replaced, no line hidden by mistake |
+| Scan of all 22 earlier runs (19,021 lines) | No account ID, address, bucket, email, key or token; the database address in 2 apply logs from before the filter |
 
 ## Outcome and further improvements
 The pipeline plans and applies infrastructure, and the keys themselves can only assume their role. Recommended improvements:

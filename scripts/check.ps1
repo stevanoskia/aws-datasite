@@ -188,6 +188,10 @@ function Test-App {
     $ok = Invoke-Tool $python @('-m', 'pytest', '-c', 'app/pyproject.toml', '--rootdir', 'app', '-p', 'no:cacheprovider', 'app/tests/unit')
     $summary = @($script:output | Where-Object { $_ -match '\d+ (passed|failed|error)' }) | Select-Object -Last 1
     Add-Result "app tests without database  $summary" $ok $script:output
+
+    $ok = Invoke-Tool $python @('-m', 'pytest', '-q', '-p', 'no:cacheprovider', '--rootdir', 'scripts', 'scripts/tests')
+    $summary = @($script:output | Where-Object { $_ -match '\d+ (passed|failed|error)' }) | Select-Object -Last 1
+    Add-Result "log filter tests  $summary" $ok $script:output
 }
 
 Write-Host 'Checks:'
