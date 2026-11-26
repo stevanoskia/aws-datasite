@@ -27,6 +27,7 @@ def run(text: str | bytes, redact: str = "", forbid: str = "") -> tuple[str, int
     [
         OTHER_ACCOUNT,
         f"arn:aws:iam::{OTHER_ACCOUNT}:role/x",
+        f"role-{OTHER_ACCOUNT}",
         "AKIA" + "ABCDEFGHIJKLMNOP",
         "ASIA" + "ABCDEFGHIJKLMNOP",
         "-----BEGIN RSA " + "PRIVATE KEY-----",
@@ -57,6 +58,7 @@ aws_instance.nat: Creation complete after 12s [id=i-0c304a4a01d26f986]
 Terraform v1.17.1, provider 6.74.0, 127.0.0.1, 172.31.0.0/16, 169.254.169.254
 Service = "rds.amazonaws.com", "com.amazonaws.eu-north-1.s3"
 id=terraform-20261125103807393000000001 sha256:1234567890123456789012ab
+blob.core.windows.net/actions-results/c8b25e1f-6b59-8de6-8565-123456789012/artifact
 user15{AT}example.org 123456-name{AT}users.noreply.github.com
 50 ── 100%
 """.replace("{AT}", "@")

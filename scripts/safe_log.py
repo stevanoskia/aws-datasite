@@ -14,7 +14,8 @@ import re
 import sys
 
 SHAPES = {
-    "account ID": re.compile(r"(?<![0-9A-Za-z.])\d{12}(?![0-9A-Za-z])"),
+    # 12 digits, but not the last part of an ID such as c8b25e1f-6b59-8de6-8565-123456789012 (the real account ID is also searched exactly)
+    "account ID": re.compile(r"(?<![0-9A-Za-z.])(?<![0-9a-fA-F]{4}-)\d{12}(?![0-9A-Za-z])"),
     "AWS access key": re.compile(r"\b(AKIA|ASIA)[A-Z0-9]{16}\b"),
     "private key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY"),
     "GitHub token": re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,})"),

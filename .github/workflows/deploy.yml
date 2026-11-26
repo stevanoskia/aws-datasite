@@ -1,0 +1,78 @@
+# Deploys one version of the app on the app server: called by the app workflow after a build, or by hand
+# ("Run workflow") with an older commit to go back to it. The server checks the database, starts the version,
+# tests it and returns to the previous one if it is unhealthy (terraform/modules/app-deploy/scripts/deploy.sh).
+#
+# AWS access: the deploy user, which may only push images and run this one fixed script (ADR-0008).
+# Only fixed fields reach this public log; what the server prints stays in AWS.
+
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git commit of the version to deploy (40 characters)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-north-1
+
+jobs:
+  deploy:
+    name: deploy (check database, start, test, else roll back)
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy # never two deploys at the same time
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: AWS credentials (ci-deploy role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_DEPLOY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_DEPLOY_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+
+      - name: The version exists
+        env:
+          TAG: ${{ inputs.tag }} # never inline in the script: the input could contain shell code
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^[0-9a-f]{40}$ ]]; then echo "::error::not a commit: refused"; exit 1; fi
+          aws ecr describe-images --repository-name aws-datasite/app --image-ids "imageTag=$TAG" > /dev/null 2>&1 \
+            || { echo "::error::there is no image of $TAG (only commits built by the app workflow can be deployed)"; exit 1; }
+
+      - name: Deploy on the app server
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -uo pipefail
+          bash scripts/ci_send_command.sh datasite-deploy "$TAG"
+          code=$?
+          case "$code" in
+            0) message="deployed and healthy" ;;
+            10) message="refused: the database lacks migrations of this version; run the app workflow with 'migrate'" ;;
+            11) message="refused: the database could not be checked; nothing changed" ;;
+            20) message="the new version was unhealthy: the previous one runs again" ;;
+            21) message="the new version was unhealthy, and no earlier version could be started: the app is down" ;;
+            *) message="failed (exit code $code)" ;;
+          esac
+          echo "### $TAG: $message" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then echo "::error::$message"; exit 1; fi
+          echo "$message"

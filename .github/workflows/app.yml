@@ -1,4 +1,11 @@
-# Tests the app against a real PostgreSQL 18 with the real migrations. No AWS access; nothing is deployed.
+# The app's pipeline: test → build → (migrate, only after an approval) → deploy.
+#
+# - test:    lint and all tests against a real PostgreSQL 18 with the real migrations. No AWS access.
+# - build:   the app image and the migration image for the ARM server, pushed to the registry (tag = commit).
+# - migrate: only when this push changes db/migrations (or by hand): waits for an approval in "production",
+#            takes a snapshot of the database, then runs the migrations on the app server.
+# - deploy:  the deploy workflow: the server checks the database, starts the version, tests it, else rolls back.
+# Each job runs only if the one before it passed. Only fixed fields reach this public log (ADR-0008).
 
 name: app
 
@@ -8,15 +15,30 @@ on:
     paths:
       - "app/**"
       - "db/**"
+      - "scripts/ci_*"
+      - "scripts/safe_log.py"
       - ".github/workflows/app.yml"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
+    inputs:
+      migrate:
+        description: "Run the migrations before the deploy (after an approval)"
+        type: boolean
+        default: false
+      mistakes:
+        description: "Also check that the tests notice deliberate mistakes (takes minutes)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: app
-  cancel-in-progress: true
+  cancel-in-progress: false # a deploy or a migration must never be stopped halfway
+
+env:
+  AWS_REGION: eu-north-1
 
 jobs:
   test:
@@ -58,5 +80,136 @@ jobs:
         run: python -m pytest tests
 
       - name: Check that the tests notice mistakes
-        if: github.event_name == 'workflow_dispatch'
+        if: inputs.mistakes
         run: python tests/break_it.py
+
+  build:
+    name: build (ARM images → registry)
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm # the app server is ARM: built natively, no emulation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: AWS credentials (ci-deploy role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_DEPLOY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_DEPLOY_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gha-build-${{ github.run_id }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+
+      - name: Build and push the app and migration images
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          OPERATOR_ALLOWED_CIDRS: ${{ secrets.OPERATOR_ALLOWED_CIDRS }}
+        run: |
+          set -euo pipefail
+          source scripts/ci_private_values.sh
+          registry="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry" 2>&1 | python3 scripts/safe_log.py
+          for target in app migrate; do
+            tag="$GITHUB_SHA"
+            if [ "$target" = migrate ]; then tag="migrate-$GITHUB_SHA"; fi
+            # Tags can't be replaced: a version that exists is not built again
+            if aws ecr describe-images --repository-name aws-datasite/app --image-ids "imageTag=$tag" > /dev/null 2>&1; then
+              echo "$target image exists already"
+              continue
+            fi
+            docker buildx build --file app/Dockerfile --target "$target" --platform linux/arm64 --provenance=false \
+              --tag "$registry/aws-datasite/app:$tag" --push . 2>&1 | python3 scripts/safe_log.py
+            echo "### $target image built" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  changes:
+    name: are there new migrations?
+    needs: build
+    runs-on: ubuntu-24.04
+    outputs:
+      migrate: ${{ steps.check.outputs.migrate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+          BY_HAND: ${{ inputs.migrate }}
+        run: |
+          set -euo pipefail
+          if [ "$BY_HAND" = "true" ]; then
+            migrate=true
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+            migrate="$( [ -n "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- db/migrations)" ] && echo true || echo false )"
+          else
+            migrate=true # unknown starting point: rather ask once too often
+          fi
+          echo "migrate=$migrate" >> "$GITHUB_OUTPUT"
+          echo "### new migrations: $migrate" >> "$GITHUB_STEP_SUMMARY"
+
+  migrate:
+    name: migrate (needs approval)
+    needs: [build, changes]
+    if: needs.changes.outputs.migrate == 'true'
+    runs-on: ubuntu-24.04
+    environment: production # required reviewer; the apply keys are secrets of this environment only
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: AWS credentials (ci-apply role)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_APPLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_APPLY_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          role-session-name: gha-migrate-${{ github.run_id }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+
+      # A way back for changes that a forward fix can't undo, such as a dropped column
+      - name: Snapshot of the database
+        run: |
+          set -euo pipefail
+          snapshot="aws-datasite-db-before-${GITHUB_SHA::12}-$GITHUB_RUN_ID"
+          aws rds create-db-snapshot --db-instance-identifier aws-datasite-db --db-snapshot-identifier "$snapshot" \
+            --tags Key=purpose,Value=before-migration > /dev/null
+          aws rds wait db-snapshot-available --db-snapshot-identifier "$snapshot"
+          echo "### snapshot $snapshot" >> "$GITHUB_STEP_SUMMARY"
+          # Keep the newest two of these snapshots: each one costs storage
+          aws rds describe-db-snapshots --db-instance-identifier aws-datasite-db --snapshot-type manual \
+            --query 'sort_by(DBSnapshots[?starts_with(DBSnapshotIdentifier, `aws-datasite-db-before-`)], &SnapshotCreateTime)[:-2].DBSnapshotIdentifier' \
+            --output text | tr '\t' '\n' | while read -r old; do
+              if [ -n "$old" ] && [ "$old" != None ]; then aws rds delete-db-snapshot --db-snapshot-identifier "$old" > /dev/null; echo "deleted $old"; fi
+            done
+
+      - name: Migrate on the app server
+        run: |
+          set -uo pipefail
+          bash scripts/ci_send_command.sh datasite-migrate "$GITHUB_SHA"
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "::error::the migration failed (exit code $code); a failed file leaves nothing behind. Nothing was deployed."
+            exit 1
+          fi
+          echo "### migrated" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: [build, migrate]
+    if: always() && needs.build.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      tag: ${{ github.sha }}
+    secrets: inherit
