@@ -4,7 +4,7 @@ import os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 T, V, R, H = "migrations/0002_tables.sql", "migrations/0003_views.sql", "migrations/0001_roles_and_extensions.sql", "migrations/0004_size_history.sql"
-L, P = "migrations/0005_app_login.sql", "set_app_password.py"
+L, P, O6 = "migrations/0005_app_login.sql", "set_app_password.py", "migrations/0006_owner_role.sql"
 F = "seed/functions.sql"
 MISTAKES = [
     (T, "orders without foreign key", "bigint not null references shop.customers (id),\n  status", "bigint not null,\n  status"),
@@ -32,6 +32,13 @@ MISTAKES = [
     (P, "password printed", "login tested", "login tested {password}"),
     (P, "password on the command line", 'f"file://{path}")', 'f"file://{path}", "--description", password)'),
     (P, "another password stored", '"password": password}', '"password": password[:-1]}'),
+    (O6, "migration login with special rights", "create role shop_migrate login connection limit 3", "create role shop_migrate login createrole connection limit 3"),
+    (O6, "tables stay with the administrator", "    execute format('alter %s %s owner to shop_owner', item.kind, item.name);", "    null;"),
+    (O6, "later tables unusable for the app", "alter default privileges for role shop_owner in schema shop grant select, insert, update, delete on tables to app_rw;\n", ""),
+    (O6, "the app can't see the migrations", "grant select on public.schema_migrations to app_rw, app_ro;\n", ""),
+    (O6, "migration login creates as itself", "alter role shop_migrate set role shop_owner;", "select 1;"),
+    (P, "administrator password settable", '"shop_migrate": "aws-datasite/migrate-db"}', '"shop_migrate": "aws-datasite/migrate-db", "postgres": "x"}'),
+    (P, "login test as the wrong user", 'login = psql("select session_user"', 'login = psql("select current_user"'),
     (P, "database changed before the secret is checked", 'stop_if_failed(aws("describe-secret", "--secret-id", SECRET)', 'print(aws("describe-secret", "--secret-id", SECRET).returncode'),
     (F, "real randomness", "select ((hashint8extended(id, seed * 1000003 + salt) >> 11) & 9007199254740991)::double precision / 9007199254740992.0", "select random() + 0 * id * seed * salt"),
     (F, "no whales", "gen.r(seed, salt, id) < 0.10 then", "gen.r(seed, salt, id) < 0 then"),

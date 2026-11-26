@@ -1,14 +1,17 @@
-"""Gives the application's database login a new random password and stores it in Secrets Manager.
+"""Gives a login of the pipeline a new random password and stores it in Secrets Manager.
 Run it again to change the password.
+
+    python db/set_app_password.py                      the app's login (shop_app)
+    python db/set_app_password.py --role shop_migrate  the migration login
 
 The password is never shown and never on a command line, and the database only receives its SCRAM
 verifier: a readable password in ALTER ROLE could end up in the server log or in pg_stat_statements.
 
 The connection comes from PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD, PGSSLMODE; AWS from AWS_PROFILE."""
-import base64, hashlib, hmac, json, os, secrets, subprocess, sys, tempfile
+import argparse, base64, hashlib, hmac, json, os, secrets, subprocess, sys, tempfile
 
-ROLE = "shop_app"
-SECRET = os.environ.get("APP_DB_SECRET", "aws-datasite/app-db")
+# Only these logins, each with its own secret: never the administrator
+SECRETS = {"shop_app": "aws-datasite/app-db", "shop_migrate": "aws-datasite/migrate-db"}
 
 
 def scram_verifier(password, salt, iterations=4096):
@@ -34,6 +37,11 @@ def stop_if_failed(result, message):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Set a new password for a login of the pipeline")
+    parser.add_argument("--role", choices=SECRETS, default="shop_app")
+    ROLE = parser.parse_args().role
+    SECRET = os.environ.get("APP_DB_SECRET", SECRETS[ROLE])
+
     # Both sides must be ready before anything changes
     found = psql(f"select 1 from pg_roles where rolname = '{ROLE}'")
     stop_if_failed(found, "no connection to the database. Nothing was changed.")
@@ -45,7 +53,7 @@ def main():
     verifier = scram_verifier(password, secrets.token_bytes(16))
     stop_if_failed(psql(f"alter role {ROLE} password '{verifier}'"), "the password was not set. Nothing was changed.")
 
-    login = psql("select current_user", PGUSER=ROLE, PGPASSWORD=password)
+    login = psql("select session_user", PGUSER=ROLE, PGPASSWORD=password)  # current_user can be the role it works as
     stop_if_failed(login, "the new password does not work, and the old one is gone. Run this again.")
     if login.stdout.strip() != ROLE:
         sys.exit("ERROR: connected as somebody else. Run this again.")

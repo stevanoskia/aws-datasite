@@ -24,7 +24,7 @@ def admin():
         pytest.fail("these tests need a PostgreSQL server (PGHOST, PGPORT, PGUSER, PGPASSWORD)")
     with psycopg.connect(dbname="postgres", autocommit=True) as server:
         server.execute(f"drop database if exists {NAME} with (force)")
-        server.execute("drop role if exists shop_app")
+        server.execute("drop role if exists shop_app, shop_migrate, shop_owner")
         server.execute(f"create database {NAME}")
     for command in (["migrate.sh"], ["seed/seed.sh", "small"]):
         script = str(DB / command[0])

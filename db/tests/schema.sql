@@ -71,6 +71,25 @@ select pg_temp.expect((
   from pg_auth_members where member = 'shop_app'::regrole
 ), 'shop_app is a member of app_rw only');
 
+-- the migration login works as shop_owner, which owns everything and can't log in itself
+select pg_temp.expect((select not rolcanlogin from pg_roles where rolname = 'shop_owner'), 'shop_owner cannot log in');
+select pg_temp.expect((
+  select rolcanlogin and not (rolsuper or rolcreaterole or rolcreatedb or rolreplication or rolbypassrls) and rolconnlimit between 1 and 5
+  from pg_roles where rolname = 'shop_migrate'
+), 'shop_migrate may log in, has no special rights and few connections');
+select pg_temp.expect((
+  select array_agg(roleid::regrole::text) = '{shop_owner}' and not bool_or(admin_option)
+  from pg_auth_members where member = 'shop_migrate'::regrole
+), 'shop_migrate is a member of shop_owner only');
+select pg_temp.expect(not exists (
+  select from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname in ('shop', 'ops') and c.relkind in ('r', 'p', 'v', 'm', 'S', 'i') and pg_get_userbyid(c.relowner) <> 'shop_owner'
+), 'shop_owner owns every table, view, sequence and index');
+select pg_temp.expect(
+  pg_get_userbyid((select relowner from pg_class where oid = 'public.schema_migrations'::regclass)) = 'shop_owner'
+  and (select nspowner::regrole::text from pg_namespace where nspname = 'shop') = 'shop_owner',
+  'shop_owner owns the schemas and the list of migrations');
+
 -- rights: app_ro only reads, app_rw changes data but not tables, obs_monitor sees no shop data
 set local role app_ro;
 select pg_temp.expect((select count(*) = 1 from shop.customers), 'app_ro can read');

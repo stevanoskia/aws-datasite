@@ -26,7 +26,7 @@ if [ -z "${PGHOST:-}" ]; then
 fi
 
 export PGOPTIONS="-c client_min_messages=warning"
-psql -X -q -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists migration_test" -c "drop role if exists shop_app" -c "create database migration_test"
+psql -X -q -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists migration_test" -c "drop role if exists shop_app, shop_migrate, shop_owner" -c "create database migration_test"
 export PGDATABASE=migration_test
 fail() { echo "FAILED: $1" >&2; exit 1; }
 refused() { if "$@" > /dev/null 2>&1; then fail "this should have been refused: $1 ${2:-}"; fi; }
@@ -71,7 +71,7 @@ done
 EOF
 chmod +x "$work/bin/aws"
 export FAKE_AWS="$work"
-set_password() { PATH="$work/bin:$PATH" python3 set_app_password.py; }
+set_password() { PATH="$work/bin:$PATH" python3 set_app_password.py "$@"; }
 
 refused as_app anything "select 1"
 set_password > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "the password could not be set"; }
@@ -97,7 +97,26 @@ second_password="$(stored)"
 refused as_app "$first_password" "select 1"
 as_app "$second_password" "select 1" > /dev/null || fail "the changed password does not work"
 
-# 6. the generator: correct data, the same data again, also when interrupted
+# 6. the migration login: later migrations run as shop_migrate, and what it creates the app can use, but not change
+refused set_password --role postgres # the script never sets an administrator's password
+set_password --role shop_migrate > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "the migration login's password could not be set"; }
+grep -q '"username": "shop_migrate"' "$work/stored.json" || fail "the migration login's password was stored under another name"
+migrate_password="$(stored)"
+as_migrate() { PGUSER=shop_migrate PGPASSWORD="$migrate_password" "$@"; }
+
+mkdir "$work/later"
+cp migrations/*.sql "$work/later/"
+printf 'create table shop.added_later (id bigint generated always as identity primary key, note text);\n' > "$work/later/9998_added_later.sql"
+as_migrate env MIGRATIONS_DIR="$work/later" bash migrate.sh | grep -q "^1 applied" || fail "the migration login cannot migrate"
+[ "$(count "select tableowner from pg_tables where tablename = 'added_later'")" = "shop_owner" ] || fail "a table made by the migration login does not belong to shop_owner"
+[ "$(as_app "$second_password" "insert into shop.added_later (note) values ('x') returning id")" = "1" ] || fail "the app cannot use a table that was added later"
+refused as_app "$second_password" "drop table shop.added_later"
+[ "$(as_app "$second_password" "select count(*) from public.schema_migrations")" = "$((files + 1))" ] || fail "the app cannot see which migrations exist"
+refused as_app "$second_password" "delete from public.schema_migrations"
+refused as_migrate psql -X -w -c "create role intruder login"
+psql -X -q -c "drop table shop.added_later" -c "delete from public.schema_migrations where version = '9998_added_later'"
+
+# 7. the generator: correct data, the same data again, also when interrupted
 fingerprint() { psql -X -q -At -v ON_ERROR_STOP=1 -f seed/fingerprint.sql | tr -d '\r'; }
 quiet() { "$@" > "$work/out.log" 2>&1 || { cat "$work/out.log" >&2; fail "$*"; }; }
 refused timeout 60 bash seed/seed.sh huge
@@ -122,5 +141,5 @@ psql -X -q -c "insert into shop.categories (name) values ('mine')"
 refused timeout 60 bash seed/seed.sh small # data that the generator did not create
 
 version="$(count 'show server_version_num')"
-psql -X -q -d postgres -c "drop database migration_test" -c "drop role shop_app"
+psql -X -q -d postgres -c "drop database migration_test" -c "drop role shop_app, shop_migrate, shop_owner"
 echo "database tests passed (PostgreSQL ${version:0:2}, $files migrations)"
