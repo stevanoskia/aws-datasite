@@ -6,6 +6,7 @@ answers the same questions: what, why, how, alternatives, why this one, drawback
 | Document | What it covers |
 |---|---|
 | [requirements.md](requirements.md) | The requirement checklist (IDs R1–R8, OPT) that every other document refers to |
+| [deployment.md](deployment.md) | How changes are deployed, and how to go back |
 | [schema.md](schema.md) | The database: tables, views, roles, generated data and the size baseline |
 | [adr/](adr/) | Decision records, numbered in the order they were made ([template](adr/_template.md)) |
 | [investigations/](investigations/) | PostgreSQL query investigations, one per query ([template](investigations/_template.md)) |
@@ -22,3 +23,4 @@ answers the same questions: what, why, how, alternatives, why this one, drawback
 | [0005](adr/0005-database.md) | Database |
 | [0006](adr/0006-application-database-login.md) | The application's database login |
 | [0007](adr/0007-application.md) | Application |
+| [0008](adr/0008-deployment.md) | Deployment of the app |
