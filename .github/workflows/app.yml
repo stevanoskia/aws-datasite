@@ -138,14 +138,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - id: check
+      - name: Compare with the previous push
+        id: check
         env:
+          EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           BY_HAND: ${{ inputs.migrate }}
         run: |
           set -euo pipefail
-          if [ "$BY_HAND" = "true" ]; then
-            migrate=true
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            migrate="$( [ "$BY_HAND" = "true" ] && echo true || echo false )" # by hand: only when asked for
           elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
             migrate="$( [ -n "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- db/migrations)" ] && echo true || echo false )"
           else
@@ -184,6 +186,8 @@ jobs:
         run: |
           set -euo pipefail
           snapshot="aws-datasite-db-before-${GITHUB_SHA::12}-$GITHUB_RUN_ID"
+          # During its daily backup (or while it starts) the database refuses a snapshot: wait for it, up to 30 minutes
+          aws rds wait db-instance-available --db-instance-identifier aws-datasite-db
           aws rds create-db-snapshot --db-instance-identifier aws-datasite-db --db-snapshot-identifier "$snapshot" \
             --tags Key=purpose,Value=before-migration > /dev/null
           aws rds wait db-snapshot-available --db-snapshot-identifier "$snapshot"
