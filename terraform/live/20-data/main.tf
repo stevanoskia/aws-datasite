@@ -45,7 +45,7 @@ module "schedule" {
 # The address for the app server, which reads it when it starts a version. A parameter's value is hidden in
 # Terraform's output, so the internal name doesn't reach the public pipeline log.
 resource "aws_ssm_parameter" "db_address" {
-  name        = "/${var.project}/db/address"
+  name        = "/datasite/db/address" # names that start with "aws" are reserved by AWS
   description = "Private address of the database"
   type        = "String"
   value       = module.postgres.address

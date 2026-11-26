@@ -9,12 +9,17 @@ variable "host_role_name" {
 }
 
 variable "db_address_parameter" {
-  description = "Name of the SSM parameter with the database address, e.g. /aws-datasite/db/address"
+  description = "Name of the SSM parameter with the database address, e.g. /datasite/db/address"
   type        = string
 
   validation {
     condition     = startswith(var.db_address_parameter, "/")
     error_message = "Must be a parameter path starting with /."
+  }
+
+  validation {
+    condition     = !can(regex("^/?(aws|ssm)", lower(var.db_address_parameter)))
+    error_message = "Names that start with aws or ssm are reserved by AWS (an apply fails with AccessDenied)."
   }
 }
 

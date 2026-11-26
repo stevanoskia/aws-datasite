@@ -59,7 +59,7 @@ module "deploy" {
 
   name_prefix          = var.project
   host_role_name       = module.app_host.role_name
-  db_address_parameter = "/${var.project}/db/address" # made by 20-data
+  db_address_parameter = "/datasite/db/address" # made by 20-data
   app_secret_name      = module.db_secret.name
   migrate_secret_name  = module.migrate_secret.name
 }

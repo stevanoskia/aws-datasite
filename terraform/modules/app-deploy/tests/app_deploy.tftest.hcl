@@ -97,6 +97,16 @@ run "the_server_may_pull_from_this_registry_only" {
   }
 }
 
+run "rejects_a_reserved_parameter_name" {
+  command = plan
+
+  variables {
+    db_address_parameter = "/AWS-project/db/address"
+  }
+
+  expect_failures = [var.db_address_parameter]
+}
+
 run "rejects_a_relative_parameter_name" {
   command = plan
 
