@@ -197,7 +197,7 @@ jobs:
 
       - name: Migrate on the app server
         run: |
-          set -uo pipefail
+          set +e # GitHub runs steps with -e: the exit code must be read, not end the step
           bash scripts/ci_send_command.sh datasite-migrate "$GITHUB_SHA"
           code=$?
           if [ "$code" -ne 0 ]; then

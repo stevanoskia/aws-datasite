@@ -13,7 +13,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = (ROOT / ".github/workflows/infra.yml").read_text(encoding="utf-8")
-GIT_BASH = Path(r"C:\Program Files\Git\bin\bash.exe")  # plain "bash" can be another program on Windows
+GIT_BASH = Path(
+    r"C:\Program Files\Git\bin\bash.exe"
+)  # plain "bash" can be another program on Windows
 BASH = str(GIT_BASH) if GIT_BASH.exists() else shutil.which("bash")
 
 ACCOUNT = "4455" + "66778899"
@@ -42,7 +44,9 @@ for address in json.load(sys.stdin):
 
 
 def step_script(name: str) -> str:
-    step = re.search(rf"- name: {re.escape(name)}\n(.*?)(?=\n      - |\n  \w|\Z)", WORKFLOW, re.S).group(1)
+    step = re.search(
+        rf"- name: {re.escape(name)}\n(.*?)(?=\n      - |\n  \w|\Z)", WORKFLOW, re.S
+    ).group(1)
     return textwrap.dedent(step.split("run: |\n", 1)[1])
 
 
@@ -65,7 +69,9 @@ class Pipeline:
             "python3": f'"{python}" "$@"',
         }
         for program, script in programs.items():
-            (tools / program).write_text("#!/usr/bin/env bash\n" + script + "\n", newline="\n")
+            (tools / program).write_text(
+                "#!/usr/bin/env bash\n" + script + "\n", newline="\n"
+            )
             (tools / program).chmod(0o755)
         self.env = {
             **os.environ,
@@ -76,7 +82,9 @@ class Pipeline:
             "GITHUB_STEP_SUMMARY": (self.fake / "summary").as_posix(),
             "AWS_REGION": "eu-north-1",
             "TF_STATE_BUCKET": BUCKET,
-            "OPERATOR_ALLOWED_CIDRS": json.dumps([f"{ADDRESS}/32", f"{UNUSUAL_ADDRESS}/32"]),
+            "OPERATOR_ALLOWED_CIDRS": json.dumps(
+                [f"{ADDRESS}/32", f"{UNUSUAL_ADDRESS}/32"]
+            ),
             "CHANGED": "10-network 20-data",
         }
 
@@ -86,10 +94,19 @@ class Pipeline:
 
     def run(self, step: str) -> tuple[int, str]:
         (self.work / "step.sh").write_text(step_script(step), newline="\n")
-        done = subprocess.run([BASH, "step.sh"], cwd=self.work, env=self.env, capture_output=True, text=True, encoding="utf-8")
+        done = subprocess.run(
+            [BASH, "--noprofile", "--norc", "-eo", "pipefail", "step.sh"],
+            cwd=self.work,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
         shown = done.stdout + done.stderr
         # GitHub turns these commands into masks and doesn't show them
-        return done.returncode, "\n".join(line for line in shown.splitlines() if not line.startswith("::add-mask::"))
+        return done.returncode, "\n".join(
+            line for line in shown.splitlines() if not line.startswith("::add-mask::")
+        )
 
     def text(self, name: str) -> str:
         path = self.fake / name
@@ -105,7 +122,11 @@ def pipeline(tmp_path):
 
 
 def test_a_clean_plan_is_shown_and_handed_on(pipeline):
-    pipeline.stack("20-data", f"  # thing will be created\n  id = arn:aws:iam::{ACCOUNT}:x {BUCKET}\nPlan: 1 to add", 2)
+    pipeline.stack(
+        "20-data",
+        f"  # thing will be created\n  id = arn:aws:iam::{ACCOUNT}:x {BUCKET}\nPlan: 1 to add",
+        2,
+    )
     code, shown = pipeline.run(PLAN)
     assert (code, pipeline.text("output")) == (0, "changed=20-data\n")
     assert "id = arn:aws:iam::***:x ***" in shown
@@ -115,16 +136,24 @@ def test_a_clean_plan_is_shown_and_handed_on(pipeline):
 
 
 def test_a_change_of_hidden_outputs_is_not_called_no_changes(pipeline):
-    pipeline.stack("20-data", "No changes. Your infrastructure matches the configuration.", 2)
+    pipeline.stack(
+        "20-data", "No changes. Your infrastructure matches the configuration.", 2
+    )
     code, shown = pipeline.run(PLAN)
     assert (code, pipeline.text("output")) == (0, "changed=20-data\n")
     summary = pipeline.text("summary").split("### 20-data\n")[1]
     assert summary.startswith("Changes to outputs only") and "No changes" not in summary
-    assert "No changes" in pipeline.text("summary").split("### 20-data")[0]  # the stacks without changes still say so
+    assert (
+        "No changes" in pipeline.text("summary").split("### 20-data")[0]
+    )  # the stacks without changes still say so
 
 
-@pytest.mark.parametrize("private", [EMAIL, ADDRESS, UNUSUAL_ADDRESS, f"{UNUSUAL_ADDRESS}/32", "8.8.8.8"])
-def test_a_plan_with_private_data_fails_before_anything_can_be_applied(pipeline, private):
+@pytest.mark.parametrize(
+    "private", [EMAIL, ADDRESS, UNUSUAL_ADDRESS, f"{UNUSUAL_ADDRESS}/32", "8.8.8.8"]
+)
+def test_a_plan_with_private_data_fails_before_anything_can_be_applied(
+    pipeline, private
+):
     pipeline.stack("10-network", f"  # {private} will be created\nPlan: 1 to add", 2)
     code, shown = pipeline.run(PLAN)
     assert code == 1 and "private data in the plan of: 10-network" in shown
@@ -141,7 +170,9 @@ def test_a_failing_plan_is_filtered_too(pipeline):
 
 @pytest.mark.parametrize("step", [PLAN, APPLY])
 def test_a_failing_init_is_filtered_too(pipeline, step):
-    (pipeline.fake / "init.txt").write_text(f"Error: {EMAIL}\nno such bucket {BUCKET}\n")
+    (pipeline.fake / "init.txt").write_text(
+        f"Error: {EMAIL}\nno such bucket {BUCKET}\n"
+    )
     code, shown = pipeline.run(step)
     assert code != 0 and "no such bucket ***" in shown
     assert EMAIL not in shown and BUCKET not in shown
@@ -162,7 +193,9 @@ def test_an_apply_with_private_data_finishes_and_then_fails(pipeline, where):
     code, shown = pipeline.run(APPLY)
     assert code == 1 and "private data in the output of: 10-network" in shown
     assert UNUSUAL_ADDRESS not in shown and EMAIL not in shown
-    assert "end of 10-network" in shown and "end of 20-data" in shown  # not stopped halfway
+    assert (
+        "end of 10-network" in shown and "end of 20-data" in shown
+    )  # not stopped halfway
     assert pipeline.text("summary").count("applied") == 2
 
 
@@ -183,6 +216,15 @@ def test_without_its_private_values_the_filter_does_not_run(pipeline, step, miss
 
 def test_every_address_becomes_a_mask_of_its_own(pipeline):
     (pipeline.work / "step.sh").write_text(step_script(PLAN), newline="\n")
-    done = subprocess.run([BASH, "step.sh"], cwd=pipeline.work, env=pipeline.env, capture_output=True, text=True)
-    masks = {f"::add-mask::{a}" for a in (ADDRESS, f"{ADDRESS}/32", UNUSUAL_ADDRESS, f"{UNUSUAL_ADDRESS}/32")}
+    done = subprocess.run(
+        [BASH, "step.sh"],
+        cwd=pipeline.work,
+        env=pipeline.env,
+        capture_output=True,
+        text=True,
+    )
+    masks = {
+        f"::add-mask::{a}"
+        for a in (ADDRESS, f"{ADDRESS}/32", UNUSUAL_ADDRESS, f"{UNUSUAL_ADDRESS}/32")
+    }
     assert masks <= set(done.stdout.splitlines())

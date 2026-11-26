@@ -62,7 +62,7 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          set -uo pipefail
+          set +e # GitHub runs steps with -e: the exit code must be read, not end the step
           bash scripts/ci_send_command.sh datasite-deploy "$TAG"
           code=$?
           case "$code" in
