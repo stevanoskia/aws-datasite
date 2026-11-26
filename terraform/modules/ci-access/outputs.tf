@@ -17,3 +17,11 @@ output "apply_role_arn" {
 output "permissions_boundary_arn" {
   value = aws_iam_policy.boundary.arn
 }
+
+output "deploy_user_name" {
+  value = aws_iam_user.deploy.name
+}
+
+output "deploy_role_arn" {
+  value = aws_iam_role.deploy.arn
+}

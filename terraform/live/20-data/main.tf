@@ -41,3 +41,12 @@ module "schedule" {
   db_instance_id           = module.postgres.instance_id
   permissions_boundary_arn = data.aws_iam_policy.boundary.arn
 }
+
+# The address for the app server, which reads it when it starts a version. A parameter's value is hidden in
+# Terraform's output, so the internal name doesn't reach the public pipeline log.
+resource "aws_ssm_parameter" "db_address" {
+  name        = "/${var.project}/db/address"
+  description = "Private address of the database"
+  type        = "String"
+  value       = module.postgres.address
+}

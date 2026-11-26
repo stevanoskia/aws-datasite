@@ -134,10 +134,17 @@ jobs:
             if [ "$rc" -eq 1 ]; then echo "::error::plan failed for $stack"; exit 1; fi
             if [ "$rc" -eq 2 ]; then changed="$changed $stack"; else rm -f "plans/$stack.tfplan"; fi
 
+            # Terraform's text says "No changes" when only outputs with hidden values change; the exit code knows better
+            result="$(grep -E '^(Plan:|No changes)' "plans/$stack.txt" || true)"
+            if [ "$rc" -eq 2 ] && ! grep -q '^Plan:' <<< "$result"; then
+              result="Changes to outputs only (their values are hidden; nothing changes in AWS)"
+              echo "::notice::$stack: $result"
+            fi
+
             # Public summary: only the result line and the resource addresses, no attribute values
             {
               echo "### $stack"
-              grep -E '^(Plan:|No changes)' "plans/$stack.txt" || true
+              echo "$result"
               grep -E '^  # ' "plans/$stack.txt" | sed 's/^  # /- /' || true
             } >> "$GITHUB_STEP_SUMMARY"
           done

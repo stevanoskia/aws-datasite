@@ -3,6 +3,8 @@
 #   data.network       reads the outputs of 10-network (subnet, security group)
 #   module.app_host    private server with Docker
 #   module.db_secret   the app's database password, readable by this server only
+#   module.migrate_secret  the migration login's password, readable by this server only
+#   module.deploy      image registry and the fixed deploy and migrate scripts (ADR-0008)
 #   module.schedule    weekdays 07:00-19:00 only
 
 data "terraform_remote_state" "network" {
@@ -39,6 +41,27 @@ module "db_secret" {
   description      = "Database login of the app, set by db/set_app_password.py"
   reader_role_name = module.app_host.role_name
   reader_role_arn  = module.app_host.role_arn
+}
+
+# Filled by db/set_app_password.py --role shop_migrate
+module "migrate_secret" {
+  source = "../../modules/app-secret"
+
+  name_prefix      = var.project
+  name             = "migrate-db"
+  description      = "Migration login (owns the tables), set by db/set_app_password.py"
+  reader_role_name = module.app_host.role_name
+  reader_role_arn  = module.app_host.role_arn
+}
+
+module "deploy" {
+  source = "../../modules/app-deploy"
+
+  name_prefix          = var.project
+  host_role_name       = module.app_host.role_name
+  db_address_parameter = "/${var.project}/db/address" # made by 20-data
+  app_secret_name      = module.db_secret.name
+  migrate_secret_name  = module.migrate_secret.name
 }
 
 module "schedule" {

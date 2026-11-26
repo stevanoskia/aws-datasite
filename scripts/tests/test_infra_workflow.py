@@ -114,6 +114,15 @@ def test_a_clean_plan_is_shown_and_handed_on(pipeline):
     assert "Plan: 1 to add" in pipeline.text("summary")
 
 
+def test_a_change_of_hidden_outputs_is_not_called_no_changes(pipeline):
+    pipeline.stack("20-data", "No changes. Your infrastructure matches the configuration.", 2)
+    code, shown = pipeline.run(PLAN)
+    assert (code, pipeline.text("output")) == (0, "changed=20-data\n")
+    summary = pipeline.text("summary").split("### 20-data\n")[1]
+    assert summary.startswith("Changes to outputs only") and "No changes" not in summary
+    assert "No changes" in pipeline.text("summary").split("### 20-data")[0]  # the stacks without changes still say so
+
+
 @pytest.mark.parametrize("private", [EMAIL, ADDRESS, UNUSUAL_ADDRESS, f"{UNUSUAL_ADDRESS}/32", "8.8.8.8"])
 def test_a_plan_with_private_data_fails_before_anything_can_be_applied(pipeline, private):
     pipeline.stack("10-network", f"  # {private} will be created\nPlan: 1 to add", 2)

@@ -32,3 +32,13 @@ output "permissions_boundary_arn" {
   description = "Every IAM role created by the other stacks must carry this boundary"
   value       = module.ci_access.permissions_boundary_arn
 }
+
+output "ci_deploy_user_name" {
+  description = "IAM user whose access key goes into the GitHub repository secrets (automatic app deploys)"
+  value       = module.ci_access.deploy_user_name
+}
+
+output "ci_deploy_role_arn" {
+  description = "Role the deploy jobs assume (stored as a GitHub secret, not in the repo)"
+  value       = module.ci_access.deploy_role_arn
+}
