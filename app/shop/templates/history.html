@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Order history{% endblock %}
+{% block content %}
+<h1>Order history</h1>
+<form class="search" method="get" action="/shop/history">
+  <input name="customer_id" value="{{ customer_id }}" placeholder="Customer number" inputmode="numeric" required autofocus>
+  <button>Show orders</button>
+</form>
+<p class="muted">Customers 1 to 5 have very many orders: their history shows what a missing index costs.</p>
+
+{% if placed %}<p class="message">Order {{ placed }} is placed.</p>{% endif %}
+
+{% if orders is not none %}
+  {% if orders %}
+  <table>
+    <thead><tr><th>Order</th><th>Date</th><th>Status</th><th class="number">Total</th></tr></thead>
+    <tbody>
+    {% for order in orders %}
+      <tr class="{{ 'placed' if order.id == placed }}">
+        <td>{{ order.id }}</td>
+        <td>{{ order.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><span class="status {{ order.status }}">{{ order.status }}</span></td>
+        <td class="number">{{ "%.2f" | format(order.total) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">This customer has no orders{% if page > 1 %} on this page{% endif %}.</p>
+  {% endif %}
+  <p class="pages">
+    {% if page > 1 %}<a href="?customer_id={{ customer_id }}&page={{ page - 1 }}">← newer</a>{% endif %}
+    <span>page {{ page }}</span>
+    {% if orders | length == 20 %}<a href="?customer_id={{ customer_id }}&page={{ page + 1 }}">older →</a>{% endif %}
+  </p>
+{% endif %}
+{% endblock %}

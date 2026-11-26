@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<h1>Products</h1>
+<form class="search" method="get" action="/shop">
+  <input name="q" value="{{ q }}" placeholder="Name contains, e.g. lamp" autofocus>
+  <select name="color">
+    <option value="">any color</option>
+    {% for name in ["black", "white", "grey", "blue", "red", "teal"] %}
+      <option value="{{ name }}" {{ "selected" if name == color }}>{{ name }}</option>
+    {% endfor %}
+  </select>
+  <input name="category_id" value="{{ category_id or '' }}" placeholder="Category number" inputmode="numeric" size="14">
+  <button>Search</button>
+</form>
+
+{% if products %}
+<table>
+  <thead><tr><th>Product</th><th>Color</th><th class="number">Price</th><th class="number">Rating</th><th class="number">Reviews</th></tr></thead>
+  <tbody>
+  {% for product in products %}
+    <tr>
+      <td><a href="/shop/products/{{ product.id }}">{{ product.name }}</a> <span class="muted">{{ product.sku }}</span></td>
+      <td>{{ product.attributes.color }}</td>
+      <td class="number">{{ "%.2f" | format(product.price) }}</td>
+      <td class="number">{{ "%.2f" | format(product.average_rating) if product.average_rating is not none else "–" }}</td>
+      <td class="number">{{ product.review_count }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No products found.</p>
+{% endif %}
+
+<p class="pages">
+  {% if page > 1 %}<a href="?q={{ q | urlencode }}&color={{ color }}&category_id={{ category_id or '' }}&page={{ page - 1 }}">← previous</a>{% endif %}
+  <span>page {{ page }}</span>
+  {% if products | length == 20 %}<a href="?q={{ q | urlencode }}&color={{ color }}&category_id={{ category_id or '' }}&page={{ page + 1 }}">next →</a>{% endif %}
+</p>
+{% endblock %}

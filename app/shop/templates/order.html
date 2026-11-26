@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Order{% endblock %}
+{% block content %}
+<h1>Place an order</h1>
+{% if message %}<p class="message">{{ message }}</p>{% endif %}
+<form class="order" method="post" action="/shop/order">
+  <label>Customer number <input name="customer_id" value="{{ form.customer_id }}" inputmode="numeric" required></label>
+  <label>Product number <input name="product_id" value="{{ form.product_id }}" inputmode="numeric" required></label>
+  <label>Quantity <input name="quantity" value="{{ form.quantity }}" inputmode="numeric" required></label>
+  <label>Payment
+    <select name="payment_method">
+      {% for method in methods %}
+        <option value="{{ method }}" {{ "selected" if method == form.payment_method }}>{{ method.replace("_", " ") }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button>Place order</button>
+</form>
+<p class="muted">The order is real: it takes the stock, and adds the order, its line and its payment in one transaction.</p>
+{% endblock %}

@@ -9,21 +9,32 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-M, S, D, OBS, SET, MOD = (f"shop/{name}.py" for name in ("main", "sql", "database", "observe", "settings", "models"))
+M, S, D, OBS, SET, MOD, SV, PG = (
+    f"shop/{name}.py" for name in ("main", "sql", "database", "observe", "settings", "models", "service", "pages")
+)
+BASE = "shop/templates/base.html"
 MISTAKES = [
-    (M, "products locked in any order", "sorted(new.lines, key=lambda line: line.product_id)", "new.lines"),
-    (M, "order without transaction", "            with db.transaction():\n                prices", "            if True:\n                prices"),
-    (M, "missing stock ignored", "quantity=line.quantity) == 0:", "quantity=line.quantity) == -1:"),
-    (M, "unknown products ignored", "if len(prices) != len(lines):", "if False:"),
-    (M, "wrong total", "sum(prices[line.product_id] * line.quantity for", "sum(prices[line.product_id] for"),
+    (SV, "products locked in any order", "sorted(new.lines, key=lambda line: line.product_id)", "new.lines"),
+    (SV, "order without transaction", "    with db.transaction():\n        prices", "    if True:\n        prices"),
+    (SV, "missing stock ignored", "quantity=line.quantity) == 0:", "quantity=line.quantity) == -1:"),
+    (SV, "unknown products ignored", "if len(prices) != len(lines):", "if False:"),
+    (SV, "wrong total", "sum(prices[line.product_id] * line.quantity for", "sum(prices[line.product_id] for"),
     (M, "stock not given back", 'if change.status in ("cancelled", "returned"):', 'if change.status == "returned":'),
     (M, "any status change allowed", "if payment_status is None:", "if False:"),
-    (M, "page 1 skipped", "offset=(page - 1) * page_size)\n\n    # --- Orders", "offset=page * page_size)\n\n    # --- Orders"),
-    (M, "color ignored", 'Jsonb({"color": color}) if color else None', "None"),
+    (SV, "page 1 skipped", "limit=page_size, offset=(page - 1) * page_size)", "limit=page_size, offset=page * page_size)"),
+    (SV, "color ignored", 'Jsonb({"color": color}) if color else None', "None"),
     (M, "lost connections not handled", 'answer(psycopg.OperationalError, 503, "the', 'answer(psycopg.errors.DeadlockDetected, 503, "the'),
     (M, "a full pool not handled", 'answer(PoolTimeout, 503,', 'answer(PoolTimeout, 500,'),
     (M, "timeouts not handled", '    answer(psycopg.errors.QueryCanceled, 504, "the database took too long")\n', ""),
     (M, "unknown customers not handled", '    answer(psycopg.errors.ForeignKeyViolation, 404, "unknown customer or product")\n', ""),
+    (PG, "pages without escaping", 'templates.env.globals["cost"] = current_request.get', 'templates.env.globals["cost"] = current_request.get\ntemplates.env.autoescape = False'),
+    (PG, "other web sites may order", "if not from_this_site(request):", "if False:"),
+    (PG, "origin not checked", "return origin is None or origin ==", "return True or origin =="),
+    (PG, "fetch site not checked", '("same-origin", "none")', '("same-origin", "none", "same-site", "cross-site")'),
+    (PG, "reload places the order again", 'placed={placed[\'id\']}", status_code=303)', 'placed={placed[\'id\']}", status_code=200)'),
+    (PG, "history of another customer", "service.order_history(db, customer_id, page_number, PAGE_SIZE)", "service.order_history(db, 1, page_number, PAGE_SIZE)"),
+    (PG, "unknown product crashes the page", "        try:\n            with database.session() as db:\n                found = service.product(db, product_id)\n        except HTTPException as error:\n            return problem(request, error)\n", "        with database.session() as db:\n            found = service.product(db, product_id)\n"),
+    (BASE, "cost not shown", "<b>{{ used.db_queries }}</b>", "<b>0</b>"),
     (S, "stock below zero tried", "and quantity >= %(quantity)s", ""),
     (S, "order not locked", "where id = %(order_id)s for update", "where id = %(order_id)s"),
     (S, "other customers' orders shown", "where customer_id = %(customer_id)s\n", "where customer_id >= %(customer_id)s\n"),

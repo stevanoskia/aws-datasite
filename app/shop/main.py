@@ -10,7 +10,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from psycopg.types.json import Jsonb
 from psycopg_pool import PoolTimeout
 
-from . import sql
+from . import pages, service, sql
 from .database import Database
 from .models import (
     NO_ZERO_CHARACTER,
@@ -55,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(ObserveMiddleware, metrics=metrics)
     add_error_handlers(app)
     add_routes(app, database, metrics, settings)
+    pages.add_pages(app, database)
     return app
 
 
@@ -80,11 +81,6 @@ def add_routes(app: FastAPI, database: Database, metrics: Metrics, settings: Set
     # Each endpoint borrows a connection inside its function, not as a FastAPI dependency: dependencies run
     # even when the request is invalid, and such a request must not use up the pool.
 
-    def found(row: dict | None, what: str) -> dict:
-        if row is None:
-            raise HTTPException(404, f"unknown {what}")
-        return row
-
     # --- Operations ------------------------------------------------------------------------
 
     @app.get("/health")
@@ -107,13 +103,12 @@ def add_routes(app: FastAPI, database: Database, metrics: Metrics, settings: Set
     @app.get("/customers/{customer_id}")
     def customer(customer_id: Id):
         with database.session() as db:
-            return found(db.one(sql.CUSTOMER, customer_id=customer_id), "customer")
+            return service.found(db.one(sql.CUSTOMER, customer_id=customer_id), "customer")
 
     @app.get("/customers/{customer_id}/orders")
     def order_history(customer_id: Id, page: Page = 1, page_size: PageSize = 20):
         with database.session() as db:
-            found(db.one(sql.CUSTOMER, customer_id=customer_id), "customer")
-            return db.all(sql.ORDER_HISTORY, customer_id=customer_id, limit=page_size, offset=(page - 1) * page_size)
+            return service.order_history(db, customer_id, page, page_size)
 
     # --- Orders ----------------------------------------------------------------------------
 
@@ -125,7 +120,7 @@ def add_routes(app: FastAPI, database: Database, metrics: Metrics, settings: Set
     @app.get("/orders/{order_id}")
     def order(order_id: Id):
         with database.session() as db:
-            result = found(db.one(sql.ORDER, order_id=order_id), "order")
+            result = service.found(db.one(sql.ORDER, order_id=order_id), "order")
             result["lines"] = db.all(sql.ORDER_LINES, order_id=order_id)
             result["payments"] = db.all(sql.ORDER_PAYMENTS, order_id=order_id)
             return result
@@ -133,35 +128,14 @@ def add_routes(app: FastAPI, database: Database, metrics: Metrics, settings: Set
     @app.post("/orders", status_code=201)
     def place_order(new: NewOrder):
         with database.session() as db:
-            # Always in the same order: two orders that share products then can't block each other for ever
-            lines = sorted(new.lines, key=lambda line: line.product_id)
-            product_ids = [line.product_id for line in lines]
-            with db.transaction():
-                prices = {row["id"]: row["price"] for row in db.all(sql.PRODUCT_PRICES, product_ids=product_ids)}
-                if len(prices) != len(lines):
-                    raise HTTPException(404, "unknown product")
-                for line in lines:
-                    if db.run(sql.TAKE_STOCK, product_id=line.product_id, quantity=line.quantity) == 0:
-                        raise HTTPException(409, f"not enough stock of product {line.product_id}")
-                total = sum(prices[line.product_id] * line.quantity for line in lines)
-                placed = db.one(sql.ADD_ORDER, customer_id=new.customer_id, total=total)
-                db.run(
-                    sql.ADD_ORDER_LINES,
-                    order_id=placed["id"],
-                    line_nos=list(range(1, len(lines) + 1)),
-                    product_ids=product_ids,
-                    quantities=[line.quantity for line in lines],
-                    prices=[prices[product_id] for product_id in product_ids],
-                )
-                db.run(sql.ADD_PAYMENT, order_id=placed["id"], method=new.payment_method, amount=total)
-            return placed
+            return service.place_order(db, new)
 
     @app.put("/orders/{order_id}/status")
     def change_status(order_id: Id, change: StatusChange):
         with database.session() as db:
             with db.transaction():
                 # Locked until the end, so two changes of the same order can't both succeed
-                current = found(db.one(sql.LOCK_ORDER, order_id=order_id), "order")["status"]
+                current = service.found(db.one(sql.LOCK_ORDER, order_id=order_id), "order")["status"]
                 payment_status = STATUS_CHANGES.get(current, {}).get(change.status)
                 if payment_status is None:
                     raise HTTPException(409, f"an order that is {current} can't become {change.status}")
@@ -184,21 +158,12 @@ def add_routes(app: FastAPI, database: Database, metrics: Metrics, settings: Set
         page_size: PageSize = 20,
     ):
         with database.session() as db:
-            return db.all(
-                sql.PRODUCT_SEARCH,
-                pattern=sql.like_pattern(q),
-                category_id=category_id,
-                attributes=Jsonb({"color": color}) if color else None,
-                limit=page_size,
-                offset=(page - 1) * page_size,
-            )
+            return service.search_products(db, q, category_id, color, page, page_size)
 
     @app.get("/products/{product_id}")
     def product(product_id: Id):
         with database.session() as db:
-            result = found(db.one(sql.PRODUCT, product_id=product_id), "product")
-            result["reviews"] = db.all(sql.PRODUCT_REVIEWS, product_id=product_id, limit=10)
-            return result
+            return service.product(db, product_id)
 
     @app.post("/products/{product_id}/reviews", status_code=201)
     def add_review(product_id: Id, new: NewReview):

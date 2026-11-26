@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Shop{% endblock %} · datasite</title>
+  <link rel="stylesheet" href="/static/shop.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/shop">datasite shop</a>
+    <nav>
+      <a href="/shop">Search</a>
+      <a href="/shop/order">Order</a>
+      <a href="/shop/history">Order history</a>
+      <a href="/docs">API</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  {% set used = cost() %}
+  <footer>
+    {% if used %}
+      <span><b>{{ used.db_queries }}</b> {{ "query" if used.db_queries == 1 else "queries" }}</span>
+      <span><b>{{ "%.1f" | format(used.db_seconds * 1000) }} ms</b> in the database</span>
+      <span>request <code>{{ used.request_id }}</code></span>
+    {% endif %}
+  </footer>
+</body>
+</html>
