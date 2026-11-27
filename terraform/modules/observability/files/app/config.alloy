@@ -7,9 +7,18 @@ prometheus.exporter.unix "server" {
   rootfs_path = "/host/root"
 }
 
+// The exporter labels its targets job="integrations/unix", which job_name does not replace
+discovery.relabel "server" {
+  targets = prometheus.exporter.unix.server.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "node"
+  }
+}
+
 prometheus.scrape "server" {
-  targets         = prometheus.exporter.unix.server.targets
-  job_name        = "node"
+  targets         = discovery.relabel.server.output
   scrape_interval = "15s"
   forward_to      = [prometheus.remote_write.obs.receiver]
 }

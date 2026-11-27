@@ -63,6 +63,29 @@ def test_prometheus_accepts_remote_write_and_keeps_its_disk_share():
     assert re.search(r"--storage\.tsdb\.retention\.size=\d+GB", prometheus)
 
 
+def jobs_that_exist() -> set[str]:
+    """Values of the job label that really arrive in Prometheus."""
+    jobs = set(re.findall(r"job_name: (\S+)", (FILES / "obs/prometheus.yml").read_text(encoding="utf-8")))
+    alloy = (FILES / "app/config.alloy").read_text(encoding="utf-8")
+    for block in re.findall(r'^prometheus\.scrape "[^"]+" \{\n(.*?)^\}', alloy, re.MULTILINE | re.DOTALL):
+        # An exporter's targets carry their own job label ("integrations/..."): job_name does not replace it
+        if "prometheus.exporter." not in block:
+            jobs.update(re.findall(r'job_name\s*=\s*"([^"]+)"', block))
+    for rule in re.findall(r"rule \{(.*?)\}", alloy, re.DOTALL):
+        if re.search(r'target_label\s*=\s*"job"', rule):
+            jobs.update(re.findall(r'replacement\s*=\s*"([^"]+)"', rule))
+    return jobs
+
+
+def test_dashboards_filter_only_on_jobs_that_exist():
+    jobs = jobs_that_exist()
+    for path in (FILES / "obs/grafana").glob("*.json"):
+        for panel in json.loads(path.read_text(encoding="utf-8"))["panels"]:
+            for target in panel["targets"]:
+                for job in re.findall(r'job="([^"]+)"', target["expr"]):
+                    assert job in jobs, f"{path.name}, {panel['title']}: no job {job!r} arrives (jobs: {sorted(jobs)})"
+
+
 def test_dashboards_use_the_provisioned_datasource_and_the_app_s_metrics():
     datasource_uid = re.search(r"^\s*uid: (\S+)$", (FILES / "obs/grafana/datasources.yaml").read_text(), re.MULTILINE).group(1)
     observe = (ROOT / "app/shop/observe.py").read_text(encoding="utf-8")
