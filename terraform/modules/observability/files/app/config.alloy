@@ -1,0 +1,30 @@
+// Collects on the app server and sends everything to Prometheus on the monitoring server.
+// When the monitoring server is unreachable, samples wait in the write-ahead log (storage path) and are sent later.
+
+prometheus.exporter.unix "server" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+}
+
+prometheus.scrape "server" {
+  targets         = prometheus.exporter.unix.server.targets
+  job_name        = "node"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.obs.receiver]
+}
+
+prometheus.scrape "app" {
+  targets         = [{"__address__" = "127.0.0.1:${app_port}", "service" = "shop"}]
+  job_name        = "shop"
+  metrics_path    = "/metrics"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.obs.receiver]
+}
+
+prometheus.remote_write "obs" {
+  endpoint {
+    url = "${remote_write_url}"
+  }
+  external_labels = {"host" = "app"}
+}

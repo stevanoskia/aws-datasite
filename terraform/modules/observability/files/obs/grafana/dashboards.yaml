@@ -1,0 +1,10 @@
+apiVersion: 1
+
+# Dashboards come from Git; a change made in the browser is not kept
+providers:
+  - name: datasite
+    folder: aws-datasite
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
