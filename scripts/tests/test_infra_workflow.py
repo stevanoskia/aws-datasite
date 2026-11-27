@@ -228,3 +228,96 @@ def test_every_address_becomes_a_mask_of_its_own(pipeline):
         for a in (ADDRESS, f"{ADDRESS}/32", UNUSUAL_ADDRESS, f"{UNUSUAL_ADDRESS}/32")
     }
     assert masks <= set(done.stdout.splitlines())
+
+
+SCOPE = "Does the push need a plan?"
+
+
+class History:
+    """A repository with one earlier push, and the decision step run on the next one."""
+
+    def __init__(self, folder: Path) -> None:
+        self.repo, self.output = folder / "repo", folder / "output"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        self.change("README.md")
+        self.before = self.git("rev-parse", "HEAD")
+
+    def git(self, *args: str) -> str:
+        done = subprocess.run(
+            ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", *args],
+            cwd=self.repo, capture_output=True, text=True, check=True,
+        )  # fmt: skip
+        return done.stdout.strip()
+
+    def change(self, *paths: str) -> None:
+        for path in paths:
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            with open(self.repo / path, "a", encoding="utf-8") as file:
+                file.write("x\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "change")
+
+    def plan(self, event: str = "push", before: str | None = None) -> str:
+        (self.repo.parent / "step.sh").write_text(step_script(SCOPE), newline="\n")
+        env = {**os.environ, "EVENT": event, "BEFORE": self.before if before is None else before,
+               "GITHUB_SHA": self.git("rev-parse", "HEAD"), "GITHUB_OUTPUT": self.output.as_posix(),
+               "GITHUB_STEP_SUMMARY": (self.repo.parent / "summary").as_posix()}  # fmt: skip
+        subprocess.run([BASH, "--noprofile", "--norc", "-eo", "pipefail", "../step.sh"], cwd=self.repo, env=env, check=True)
+        return self.output.read_text().strip()
+
+
+@pytest.mark.parametrize(
+    "paths, expected",
+    [
+        (["scripts/tunnel.ps1"], "plan=false"),
+        (["scripts/tests/test_x.py", "docs/adr/x.md"], "plan=false"),
+        ([".github/workflows/app.yml"], "plan=false"),
+        (["terraform/modules/network/tests/network.tftest.hcl"], "plan=false"),
+        (["terraform/modules/network/main.tf"], "plan=true"),
+        (["terraform/live/20-data/main.tf"], "plan=true"),
+        (["terraform/modules/observability/files/app/config.alloy"], "plan=true"),
+        (["scripts/tunnel.ps1", "terraform/live/30-app/variables.tf"], "plan=true"),
+        ([".github/workflows/infra.yml"], "plan=true"),
+        (["scripts/safe_log.py"], "plan=true"),
+        (["scripts/ci_private_values.sh"], "plan=true"),
+    ],
+)
+def test_only_changes_that_terraform_reads_are_planned(tmp_path, paths, expected):
+    history = History(tmp_path)
+    history.change(*paths)
+    assert history.plan() == expected
+
+
+@pytest.mark.parametrize(
+    "event, before",
+    [
+        ("workflow_dispatch", None),  # by hand
+        ("push", "0" * 40),  # a new branch: GitHub sends zeros
+        ("push", "1" * 40),  # a commit that the checkout does not have
+        ("push", ""),
+    ],
+)
+def test_a_run_by_hand_or_without_a_known_start_is_planned(tmp_path, event, before):
+    history = History(tmp_path)
+    history.change("scripts/tunnel.ps1")
+    assert history.plan(event, before) == "plan=true"
+
+
+def test_plan_and_apply_wait_for_the_decision():
+    plan_job = re.search(r"\n  plan:\n(.*?)\n  apply:\n", WORKFLOW, re.S).group(1)
+    assert "needs: validate\n    if: needs.validate.outputs.plan == 'true'\n" in plan_job
+    assert "plan: ${{ steps.scope.outputs.plan }}" in WORKFLOW and "id: scope" in WORKFLOW
+    assert "fetch-depth: 0" in WORKFLOW.split("\n  plan:\n")[0]  # without history, every push would look unknown
+    assert "needs: plan\n" in WORKFLOW.split("\n  apply:\n")[1]  # a skipped plan skips the apply
+
+
+def test_every_script_of_plan_and_apply_counts_as_a_change():
+    wanted = re.search(r"wanted=\((.*)\)", step_script(SCOPE)).group(1).split()
+    used = set(re.findall(r"scripts/[a-z_]+\.[a-z]+", step_script(PLAN) + step_script(APPLY)))
+    assert used and used <= set(wanted)
+
+
+def test_a_change_to_any_workflow_runs_the_workflow_tests():
+    paths = re.search(r"push:\n.*?paths:\n((?:      - .*\n)+)", WORKFLOW, re.S).group(1)
+    assert '".github/workflows/**"' in paths and '"scripts/**"' in paths

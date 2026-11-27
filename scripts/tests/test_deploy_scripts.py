@@ -18,7 +18,9 @@ DOCKER = r"""
 echo "$*" >> "$FAKE/docker.log"
 image="${@: -1}"
 case "$1" in
-  login | pull | logs) [ -e "$FAKE/registry_down" ] && exit 1; exit 0 ;;
+  # Like docker, login reads the password to the end: else "aws ... | docker login" can end with a broken pipe (141)
+  login) cat > /dev/null; [ -e "$FAKE/registry_down" ] && exit 1; exit 0 ;;
+  pull | logs) [ -e "$FAKE/registry_down" ] && exit 1; exit 0 ;;
   rm) rm -f "$FAKE/running"; exit 0 ;;
   image)
     if [ "$2" = ls ]; then for t in $(cat "$FAKE/images"); do echo "{\"ID\":\"id-$t\",\"Tag\":\"$t\"}"; done; fi

@@ -76,6 +76,9 @@ Then deploy again, so that the server writes the new password for the app. The m
 ## The infrastructure
 
 **Normal case:** push to `main`, read the plan in the run's summary, approve the `apply` job in the `production` environment.
+The `infra` workflow runs all checks on every push that changes Terraform code, a script or a workflow. It plans only when the push
+changes something that Terraform reads: `terraform/` (except module tests), the infra workflow, `safe_log.py` or `ci_private_values.sh`.
+Other pushes, such as laptop scripts, tests or the other workflows, end after the checks. **Run workflow** on `infra` always plans.
 
 **Going back:** `git revert` the commit and push: the plan shows the way back, which is approved like any change. Resources that can't
 come back, such as a deleted database, need their snapshot (the database has deletion protection and a final snapshot).

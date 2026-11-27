@@ -1,6 +1,8 @@
 # Infrastructure pipeline: validate → plan → (approval) → apply
 #
-# - Runs on every push to main that touches Terraform code (or by hand).
+# - Runs on every push to main that touches Terraform code, the scripts or a workflow (or by hand).
+#   validate runs every time (all checks, also the tests of the other workflows); plan and apply only when
+#   the push changes something that can change what Terraform does (or by hand).
 # - Plans every stack in terraform/live in number order, except 00-bootstrap (applied by hand only, see ADR-0001).
 # - If any stack has changes, the apply job waits for approval in the "production" environment,
 #   then applies exactly the plans that were reviewed (saved, encrypted, passed between jobs).
@@ -15,7 +17,7 @@ on:
     paths:
       - "terraform/**"
       - "scripts/**"
-      - ".github/workflows/infra.yml"
+      - ".github/workflows/**" # their tests are in scripts/tests, which only this workflow runs
   workflow_dispatch:
 
 permissions:
@@ -36,10 +38,13 @@ jobs:
   validate:
     name: validate (private data, fmt, validate, tflint, tests)
     runs-on: ubuntu-24.04
+    outputs:
+      plan: ${{ steps.scope.outputs.plan }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # the previous push, to see what changed
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
@@ -69,9 +74,30 @@ jobs:
         shell: pwsh
         run: ./scripts/check.ps1
 
+      # Laptop scripts, tests and other workflows can't change AWS: planning every stack for them only costs time
+      - name: Does the push need a plan?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # What Terraform reads, and the scripts of the plan and apply steps; a module's tests change nothing in AWS
+          wanted=(terraform ':(exclude,glob)terraform/**/tests/**' .github/workflows/infra.yml scripts/safe_log.py scripts/ci_private_values.sh)
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            plan=true # by hand: always
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+            plan="$( [ -n "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- "${wanted[@]}")" ] && echo true || echo false )"
+          else
+            plan=true # unknown starting point: rather plan once too often
+          fi
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
+          if [ "$plan" = false ]; then echo "### No change that Terraform reads: nothing planned" >> "$GITHUB_STEP_SUMMARY"; fi
+
   plan:
     name: plan (read-only role)
     needs: validate
+    if: needs.validate.outputs.plan == 'true'
     runs-on: ubuntu-24.04
     outputs:
       changed: ${{ steps.plan.outputs.changed }}
@@ -84,6 +110,12 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
+
+      # The stacks share one download of each provider (their committed lock files check it)
+      - name: Provider cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/terraform-plugins"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/terraform-plugins" >> "$GITHUB_ENV"
 
       - name: AWS credentials (ci-plan role)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -188,6 +220,12 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
+
+      # The stacks share one download of each provider (their committed lock files check it)
+      - name: Provider cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/terraform-plugins"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/terraform-plugins" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

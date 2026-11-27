@@ -124,10 +124,19 @@ function Test-Terraform {
     $ok = Invoke-Tool 'terraform' @('fmt', '-check', '-recursive', 'terraform')
     Add-Result 'terraform fmt' $ok $script:output
 
+    # One download of each provider for all folders (without it, a fresh checkout downloads the AWS provider
+    # once per folder, about 10 seconds each). Set only for this script's process.
+    if (-not $env:TF_PLUGIN_CACHE_DIR) { $env:TF_PLUGIN_CACHE_DIR = Join-Path ([IO.Path]::GetTempPath()) 'aws-datasite-terraform-plugins' }
+    New-Item -ItemType Directory -Force $env:TF_PLUGIN_CACHE_DIR | Out-Null
+
     $folders = @(Get-ChildItem terraform/modules -Directory) + @(Get-ChildItem terraform/live -Directory)
     foreach ($folder in $folders) {
         $name = "$($folder.Parent.Name)/$($folder.Name)"
         $dir = "-chdir=$($folder.FullName)"
+        # Modules commit no lock file, and without one Terraform would skip the cache. Their lock file is thrown
+        # away, so it may record this computer's checksum only. Stacks commit theirs: never for them.
+        if ($folder.Parent.Name -eq 'modules') { $env:TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE = 'true' }
+        else { Remove-Item Env:TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE -ErrorAction SilentlyContinue }
 
         # A stack that is already initialised keeps its S3 backend settings untouched
         if (-not (Test-Path (Join-Path $folder.FullName '.terraform'))) {
