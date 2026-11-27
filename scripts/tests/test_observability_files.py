@@ -109,3 +109,11 @@ def test_dashboards_use_the_provisioned_datasource_and_the_app_s_metrics():
                 for metric in re.findall(r"\b(shop_[a-z_]+)", target["expr"]):
                     base = re.sub(r"_(total|bucket|sum|count)$", "", metric)
                     assert base in defined, f"{path.name}: {metric} is not a metric of the app"
+
+
+def test_every_changed_document_gets_a_new_association():
+    # wait_for_success_timeout_seconds only works on create: an updated association returns at once with the old status
+    main = (ROOT / "terraform/modules/observability/main.tf").read_text(encoding="utf-8")
+    association = main.split('resource "aws_ssm_association" "stack" {', 1)[1].split("\n}\n", 1)[0]
+    assert "wait_for_success_timeout_seconds" in association
+    assert re.search(r"replace_triggered_by = \[aws_ssm_document\.stack\[each\.key\]\.content\]", association)

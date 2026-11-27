@@ -28,10 +28,12 @@ laptop:      tunnel.ps1 grafana ── SSM port forwarding ──> Grafana
   Alloy keeps the samples in its write-ahead log and sends them later.
 - **Configuration from Git:** the compose files, `prometheus.yml`, Grafana's data source and the dashboards are in
   [`modules/observability/files`](../../terraform/modules/observability/files). Terraform writes them into two SSM documents
-  (`datasite-obs-stack`, `datasite-app-stack`); an SSM association runs each document on its server when it is created,
-  when a new version replaces it, and on a new server. The script ([`install.sh`](../../terraform/modules/observability/scripts/install.sh))
-  replaces the files as a whole, recreates the containers and fails unless all of them run after 60 seconds; the apply waits
-  for it (up to 15 minutes), so a broken configuration fails the apply.
+  (`datasite-obs-stack`, `datasite-app-stack`); an SSM association runs each document on its server, and again on a new
+  server. The script ([`install.sh`](../../terraform/modules/observability/scripts/install.sh)) replaces the files as a whole,
+  recreates the containers and fails unless all of them run after 60 seconds. Terraform waits for an association's success
+  (up to 15 minutes) only when it creates the association, so a changed document replaces its association: every change
+  waits for the server, and a broken configuration fails the apply. Each file's folder is computed with `/` as separator,
+  not with `dirname()`, which returns `\` on Windows.
 - **Limits:** memory per container (Prometheus 700 MB, Grafana 350 MB, Alloy 200 MB), Prometheus keeps 30 days and at most
   12 GB. Images are pinned by digest.
 - **Grafana without its own login:** anonymous access with the Admin role, login form off. The tunnel is the authentication.
@@ -79,6 +81,12 @@ Code: [`modules/observability`](../../terraform/modules/observability/main.tf), 
   labels its series `job="integrations/unix"`, and `job_name` does not replace it. A relabel rule now sets `job="node"`, and a
   file test checks that every job a dashboard filters on is one that arrives (it failed on the old configuration). After that
   apply, *Servers* shows CPU, memory, disk and network.
+- An apply that changed both documents ended at 14:44:09 UTC, while both servers finished their install at 14:45:09 (SSM
+  association history): an updated association does not make Terraform wait. Hence the replacement on every change; a file
+  test checks that rule.
+- A read-only plan from Windows showed both documents changing, although nothing had changed: `dirname()` had written
+  `grafana\dashboards`, and three files had Windows line endings in the working copy (stored with LF in Git). After the fix,
+  the plan from Windows shows no changes; a module test fails with `dirname()` on Windows.
 
 ## Outcome and further improvements
 Prometheus and Grafana run on their own server and receive the app's and the app server's metrics; k6 sends its results to the

@@ -83,6 +83,19 @@ run "documents_contain_no_parameter_syntax" {
   }
 }
 
+run "files_go_into_linux_folders_from_any_computer" {
+  # dirname() returns "grafana\dashboards" on Windows: an apply from there would write the wrong folders
+  assert {
+    condition = (
+      local.directory["grafana/dashboards/host.json"] == "grafana/dashboards"
+      && local.directory["grafana/provisioning/datasources/prometheus.yaml"] == "grafana/provisioning/datasources"
+      && local.directory["loadgen/shop.js"] == "loadgen"
+      && local.directory["compose.yaml"] == "."
+    )
+    error_message = "Each file's folder must be its path up to the last /, with / as separator."
+  }
+}
+
 run "rejects_a_reserved_document_prefix" {
   command = plan
 

@@ -84,11 +84,19 @@ reports up to 1.5 GB. The instance (`db.t4g.micro`, 1 GB memory) bursts on CPU c
   caught.
 - Read-only plan against the real account: 0 to add, 4 to change (the two documents and their associations), 0 to destroy.
   The app server's document is 11.1 KB of SSM's 64 KB.
-- The [`loadgen`](../../.github/workflows/loadgen.yml) workflow checks three things for real:
-  - Every profile runs against the app on PostgreSQL 18 with the small data set, with `STRICT=1`.
-  - Seed 7 twice gives the same 300 requests, and seed 8 gives others.
-  - The results arrive in a Prometheus configured as on the monitoring server: the run's summary lists the metric names and
-    labels.
+- The [`loadgen`](../../.github/workflows/loadgen.yml) workflow checks three things for real, and passed on its first run:
+  - Every profile ran against the app on PostgreSQL 18 with the small data set, with `STRICT=1`: every answer was expected.
+  - Seed 7 twice gave the same 300 requests, and seed 8 gave others.
+  - The results arrived in a Prometheus configured as on the monitoring server, with `job="k6"` and the labels
+    `name` (all 15 endpoints), `method`, `status`, `expected_response`, `scenario`, `profile` and `seed`, and no `url`.
+- Metric names as Prometheus stores them (OpenTelemetry translation, unit as suffix):
+  - Durations are histograms with fixed buckets: `k6_http_req_duration_milliseconds_bucket`, `_sum` and `_count`. Likewise
+    `k6_http_req_waiting_…`, `k6_http_req_blocked_…`, `k6_iteration_duration_…` and the other request phases.
+  - Counters: `k6_http_reqs_total`, `k6_http_req_failed_total`, `k6_checks_total`, `k6_iterations_total`,
+    `k6_data_sent_bytes_total`, `k6_data_received_bytes_total`.
+  - Gauges: `k6_vus`, `k6_vus_max`.
+- After the apply, both servers' installs reported their containers running: `alloy traffic` on the app server,
+  `grafana prometheus` on the monitoring server.
 
 ## Outcome and further improvements
 Every profile can be run with one command, and the same seed repeats it. The background traffic keeps the dashboards

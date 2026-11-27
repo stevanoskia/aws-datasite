@@ -51,6 +51,11 @@ locals {
     obs = { project = "datasite-obs", files = local.obs_files, instance_id = module.host.instance_id }
     app = { project = "datasite-agents", files = local.app_files, instance_id = var.app_instance_id }
   }
+
+  # The folder of each file on the Linux server. Not dirname(): on Windows it returns "grafana\dashboards"
+  directory = { for path in setunion(keys(local.obs_files), keys(local.app_files)) :
+    path => length(split("/", path)) > 1 ? join("/", slice(split("/", path), 0, length(split("/", path)) - 1)) : "."
+  }
 }
 
 # --- The server ----------------------------------------------------------------------------
@@ -125,7 +130,7 @@ resource "aws_ssm_document" "stack" {
         runCommand = concat(
           ["#!/bin/bash", "set -euo pipefail", "PROJECT='${each.value.project}'", "new=\"$(mktemp -d)\""],
           flatten([for path, content in each.value.files : [
-            "mkdir -p \"$new/${dirname(path)}\"",
+            "mkdir -p \"$new/${local.directory[path]}\"",
             "echo '${base64gzip(content)}' | base64 -d | gunzip > \"$new/${path}\"",
           ]]),
           split("\n", trimspace(file("${path.module}/scripts/install.sh"))),
@@ -148,5 +153,11 @@ resource "aws_ssm_association" "stack" {
   targets {
     key    = "InstanceIds"
     values = [each.value.instance_id]
+  }
+
+  # Terraform waits for success only when it creates an association: an updated one still shows the last run's status.
+  # A new association for every changed document makes each change wait, so a broken configuration fails the apply.
+  lifecycle {
+    replace_triggered_by = [aws_ssm_document.stack[each.key].content]
   }
 }
