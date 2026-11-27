@@ -1,11 +1,13 @@
-# Runs every check in one go: on the laptop, in the pre-push hook and in the pipeline.
+# Runs the checks: all of them in the pipeline (and by hand), the quick ones in the pre-push hook.
 # Works in Windows PowerShell 5.1 and PowerShell 7 (Linux). Needs terraform, tflint, git and Python 3.14.
 # No AWS login, and nothing is created: the Terraform tests use a mocked provider.
 #
-#   .\scripts\check.ps1                 all checks
-#   .\scripts\check.ps1 -PrivateOnly    only the private-data scan (a few seconds)
+#   .\scripts\check.ps1                 all checks (the pipeline's validate job runs exactly this)
+#   .\scripts\check.ps1 -Quick          before every push (.githooks/pre-push): the private-data scan, which must
+#                                       run before anything is public, and the formatting checks (seconds)
+#   .\scripts\check.ps1 -PrivateOnly    only the private-data scan
 
-param([switch]$PrivateOnly)
+param([switch]$PrivateOnly, [switch]$Quick)
 
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
@@ -121,8 +123,10 @@ function Test-PrivateData {
 # -----------------------------------------------------------------------------
 
 function Test-Terraform {
+    param([switch]$FormatOnly)
     $ok = Invoke-Tool 'terraform' @('fmt', '-check', '-recursive', 'terraform')
     Add-Result 'terraform fmt' $ok $script:output
+    if ($FormatOnly) { return }
 
     # One download of each provider for all folders (without it, a fresh checkout downloads the AWS provider
     # once per folder, about 10 seconds each). Set only for this script's process.
@@ -173,12 +177,19 @@ function Test-Terraform {
 # -----------------------------------------------------------------------------
 
 function Test-App {
+    param([switch]$StyleOnly)
     $venv = Join-Path $root 'app/.venv'
     $stamp = Join-Path $venv 'requirements.sha256'
     $wanted = @('app/requirements.txt', 'app/requirements-dev.txt' | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash }) -join ' '
     $python = @('Scripts/python.exe', 'bin/python' | ForEach-Object { Join-Path $venv $_ }) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-    if (-not $python -or -not (Test-Path $stamp) -or (Get-Content $stamp -Raw).Trim() -ne $wanted) {
+    $ready = $python -and (Test-Path $stamp) -and (Get-Content $stamp -Raw).Trim() -eq $wanted
+    if ($StyleOnly -and -not $ready) {
+        # Installing the libraries takes a minute: the quick check leaves that to the full one
+        Write-Host '  skip  app lint and format (app/.venv is not up to date: run .\scripts\check.ps1 once)'
+        return
+    }
+    if (-not $ready) {
         $system = @('python3', 'python' | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue }) | Select-Object -Last 1
         if (-not $python) {
             $ok = Invoke-Tool $system @('-m', 'venv', $venv)
@@ -194,6 +205,7 @@ function Test-App {
     Add-Result 'app lint' $ok $script:output
     $ok = Invoke-Tool $python @('-m', 'ruff', 'format', '--check', 'app')
     Add-Result 'app format' $ok $script:output
+    if ($StyleOnly) { return }
     $ok = Invoke-Tool $python @('-m', 'pytest', '-c', 'app/pyproject.toml', '--rootdir', 'app', '-p', 'no:cacheprovider', 'app/tests/unit')
     $summary = @($script:output | Where-Object { $_ -match '\d+ (passed|failed|error)' }) | Select-Object -Last 1
     Add-Result "app tests without database  $summary" $ok $script:output
@@ -205,7 +217,8 @@ function Test-App {
 
 Write-Host 'Checks:'
 Test-PrivateData
-if (-not $PrivateOnly) { Test-Terraform; Test-App }
+if ($Quick) { Test-Terraform -FormatOnly; Test-App -StyleOnly }
+elseif (-not $PrivateOnly) { Test-Terraform; Test-App }
 
 $failed = @($script:results | Where-Object { -not $_.Passed })
 Write-Host ''
@@ -214,4 +227,5 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 Write-Host "All $($script:results.Count) checks passed."
+if ($Quick) { Write-Host 'Quick checks only: the pipeline runs all of them (or run .\scripts\check.ps1 now).' }
 exit 0

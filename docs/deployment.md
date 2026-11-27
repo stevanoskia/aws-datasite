@@ -14,6 +14,12 @@ How changes reach AWS, and how to go back. The reasons are in [ADR-0002](adr/000
 
 Nothing is deployed when a test fails: each job runs only if the one before it passed.
 
+**Before a push:** the hook [`.githooks/pre-push`](../.githooks/pre-push) runs `scripts/check.ps1 -Quick`: the private-data scan
+and the formatting checks, in seconds. The scan must run before the push, because the repository is public and only the
+laptop has the real private values to look for. The pipeline runs all checks (`scripts/check.ps1`) after the push; a commit
+that fails them is on `main` but is never applied or deployed, and the next commit fixes it. Running `scripts/check.ps1` by
+hand gives the full result before a push (about 3 minutes on Windows).
+
 **Following a push:** `python scripts/watch_runs.py` shows every run of the last commit with a progress bar, the time so far, the job
 and step that runs, and when a job waits for an approval. The percentage compares each job with its median time in the last
 5 successful runs of its workflow; the wait for an approval is not counted. It ends when the runs end (exit code 1 if one failed).

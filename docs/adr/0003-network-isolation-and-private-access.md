@@ -56,7 +56,7 @@ Prices are estimates for eu-north-1.
 - **Only people with an AWS identity get in.** A colleague can't simply open the dashboards in a browser.
 
 ## Validation
-Offline module tests run before every push. Checked against AWS on 2026-11-23 and 2026-11-24:
+Offline module tests run in the pipeline before every plan. Checked against AWS on 2026-11-23 and 2026-11-24:
 
 | Check | Result |
 |---|---|

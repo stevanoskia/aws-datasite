@@ -44,7 +44,7 @@ Code: [`modules/rds-postgres`](../../terraform/modules/rds-postgres/main.tf), [`
 - **Cost (estimate):** about $0.20 per working day, plus about $3 per month for disk and the secret.
 
 ## Validation
-Offline module tests run before every push; they caught all 20 mistakes made on purpose. Checked against AWS on 2026-11-24:
+Offline module tests run in the pipeline before every plan; they caught all 20 mistakes made on purpose. Checked against AWS on 2026-11-24:
 
 | Check | Result |
 |---|---|
