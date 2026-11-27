@@ -86,7 +86,8 @@ Code: [`modules/observability`](../../terraform/modules/observability/main.tf), 
   apply, *Servers* shows CPU, memory, disk and network.
 - An apply that changed both documents ended at 14:44:09 UTC, while both servers finished their install at 14:45:09 (SSM
   association history): an updated association does not make Terraform wait. Hence the replacement on every change; a file
-  test checks that rule.
+  test checks that rule. The next change (the *Load test* dashboard) replaced the monitoring server's association: the apply
+  step took 97 seconds and ended at 15:23:29 UTC, after the server's install had finished at 15:23:16.
 - A read-only plan from Windows showed both documents changing, although nothing had changed: `dirname()` had written
   `grafana\dashboards`, and three files had Windows line endings in the working copy (stored with LF in Git). After the fix,
   the plan from Windows shows no changes; a module test fails with `dirname()` on Windows.
