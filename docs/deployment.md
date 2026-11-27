@@ -14,6 +14,10 @@ How changes reach AWS, and how to go back. The reasons are in [ADR-0002](adr/000
 
 Nothing is deployed when a test fails: each job runs only if the one before it passed.
 
+**Following a push:** `python scripts/watch_runs.py` shows every run of the last commit with a progress bar, the time so far, the job
+and step that runs, and when a job waits for an approval. The percentage compares each job with its median time in the last
+5 successful runs of its workflow; the wait for an approval is not counted. It ends when the runs end (exit code 1 if one failed).
+
 ## The app
 
 **Normal case:** push to `main`. About 3 minutes later the version runs, if the server is running (weekdays 07:00–19:00 Berlin time).
