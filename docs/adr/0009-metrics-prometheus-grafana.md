@@ -13,14 +13,17 @@ Grafana in Docker Compose. On the app server, **Grafana Alloy** collects and **p
 
 ```
 app server:  Alloy ── scrapes ──> app /metrics (localhost:8000) and the server itself (node metrics)
-             Alloy, k6 ── remote write, port 9090 ──> monitoring server: Prometheus <── Grafana (localhost:3000)
+             Alloy ── remote write, port 9090 ──> monitoring server: Prometheus <── Grafana (localhost:3000)
+             k6 ── OpenTelemetry (OTLP over HTTP), port 9090 ──┘
 laptop:      tunnel.ps1 grafana ── SSM port forwarding ──> Grafana
 ```
 
 - **Network:** the monitoring server's security group accepts port 9090 from the app server's group only; the app server's group
   gets one outbound rule to it. Grafana is published on the monitoring server's localhost, so the only way to it is an SSM
   session (operator role, company address). Alloy's status page also stays on localhost.
-- **Push, not scrape:** Prometheus runs with `--web.enable-remote-write-receiver` and scrapes only itself. The app keeps
+- **Push, not scrape:** Prometheus runs with `--web.enable-remote-write-receiver` (Alloy) and `--web.enable-otlp-receiver`
+  (k6, [ADR-0010](0010-traffic-generator.md)) and scrapes only itself. OpenTelemetry metrics may arrive up to 30 minutes
+  out of order (`out_of_order_time_window`, as the Prometheus guide recommends). The app keeps
   listening on localhost, and the monitoring server needs no route to the app server. When the monitoring server is down,
   Alloy keeps the samples in its write-ahead log and sends them later.
 - **Configuration from Git:** the compose files, `prometheus.yml`, Grafana's data source and the dashboards are in
@@ -52,7 +55,7 @@ Code: [`modules/observability`](../../terraform/modules/observability/main.tf), 
 ## Consequences
 - **Cost:** about $8 a month on the working-hours schedule (server and its 20 GB disk); the disk is charged while it is stopped.
 - **Security:** a new listening port (9090) inside the VPC, reachable from the app server only. Anyone who can open an SSM session
-  on the monitoring server is Grafana admin. Remote write accepts any series from the app server.
+  on the monitoring server is Grafana admin. Remote write and the OpenTelemetry receiver accept any series from the app server.
 - **Availability:** while the monitoring server is stopped or being recreated, nothing is shown; Alloy sends what it kept
   (its write-ahead log holds about two hours). An apply that changes a file restarts the containers (a few seconds without data).
 - **Alloy reads the app server's `/proc`, `/sys` and file system** (read-only) for the node metrics, and runs in the host's network.
@@ -68,6 +71,14 @@ Code: [`modules/observability`](../../terraform/modules/observability/main.tf), 
   and restarts; every image comes from the pinned list; only Prometheus publishes a port beyond localhost; Grafana listens on
   localhost; Alloy opens no port; dashboards use the provisioned data source and only metrics the app defines.
 - Read-only plan against the real account: 17 to add, 0 to change, 0 to destroy; the monitoring document is 7.5 KB of SSM's 64 KB.
+- First apply: 16 of 17 created. The monitoring server's association succeeded after 2.5 minutes. The app server's association
+  failed within a second with AccessDenied, before anything reached the server (the agent log has no trace of it, and the
+  command was sent by the SSM service like the successful one). Started once more by hand with `start-associations-once`,
+  it succeeded; the cause was not found. Terraform then replaced the association in the next apply.
+- In Grafana through the tunnel: the *Service* dashboard showed the app's requests. *Servers* showed nothing: the unix exporter
+  labels its series `job="integrations/unix"`, and `job_name` does not replace it. A relabel rule now sets `job="node"`, and a
+  file test checks that every job a dashboard filters on is one that arrives (it failed on the old configuration). After that
+  apply, *Servers* shows CPU, memory, disk and network.
 
 ## Outcome and further improvements
 Prometheus and Grafana run on their own server and receive the app's and the app server's metrics; k6 sends its results to the

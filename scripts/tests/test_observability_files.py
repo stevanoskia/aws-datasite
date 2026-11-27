@@ -36,7 +36,7 @@ def test_every_container_has_a_memory_limit_and_restarts():
 def test_every_image_comes_from_the_pinned_list():
     for compose in (OBS, APP):
         for name, block in services(compose).items():
-            assert re.search(r"^    image: \$\{images\.[a-z]+\}$", block, re.MULTILINE), f"{name}: image not from var.images"
+            assert re.search(r"^    image: \$\{images\.[a-z0-9]+\}$", block, re.MULTILINE), f"{name}: image not from var.images"
 
 
 def test_only_prometheus_is_reachable_from_other_servers():
@@ -57,9 +57,18 @@ def test_the_collector_opens_no_port():
     assert "--server.http.listen-addr=127.0.0.1:" in alloy  # host network: its status page must stay on localhost
 
 
+def test_the_background_traffic_opens_no_port_and_reports_nothing_outside():
+    traffic = services(APP)["traffic"]
+    assert "ports:" not in traffic and "--address" not in traffic  # host network: k6's own API stays off
+    assert 'K6_NO_USAGE_REPORT: "true"' in traffic
+    assert "--out, opentelemetry" in traffic and "K6_OTEL_HTTP_EXPORTER_ENDPOINT: ${otlp_endpoint}" in traffic
+    assert "./loadgen:/loadgen:ro" in traffic
+
+
 def test_prometheus_accepts_remote_write_and_keeps_its_disk_share():
     prometheus = services(OBS)["prometheus"]
-    assert "--web.enable-remote-write-receiver" in prometheus  # Alloy and k6 push, nothing is scraped across servers
+    assert "--web.enable-remote-write-receiver" in prometheus  # Alloy pushes, nothing is scraped across servers
+    assert "--web.enable-otlp-receiver" in prometheus  # k6 pushes OpenTelemetry metrics
     assert re.search(r"--storage\.tsdb\.retention\.size=\d+GB", prometheus)
 
 

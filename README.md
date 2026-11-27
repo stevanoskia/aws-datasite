@@ -25,8 +25,8 @@ Target architecture. Parts marked ✅ exist.
  │   NAT instance (outbound only, nothing in from the internet) ✅                            │
  │                                                                                            │
  │ private-app subnets (2 AZs), no public IPs                                                 │
- │   app host:  FastAPI app ✅ · k6 traffic generator · Grafana Alloy (logs + metrics)         │
- │   obs host:  Prometheus · Grafana · Loki · postgres_exporter · YACE (CloudWatch metrics)    │
+ │   app host:  FastAPI app ✅ · k6 traffic generator · Grafana Alloy (metrics ✅, logs)      │
+ │   obs host:  Prometheus ✅ · Grafana ✅ · Loki · postgres_exporter · YACE (CloudWatch)     │
  │                                                                                            │
  │ private-db subnets (2 AZs), no route out                                                   │
  │   RDS PostgreSQL 18 (db.t4g.micro), encrypted, not public, point-in-time recovery ✅       │
@@ -47,7 +47,7 @@ Target architecture. Parts marked ✅ exist.
 | `10-network` | VPC, subnets, NAT instance, flow logs, private access ([ADR-0003](docs/adr/0003-network-isolation-and-private-access.md)) |
 | `20-data` | RDS PostgreSQL, its settings and automatic stop ([ADR-0005](docs/adr/0005-database.md)) |
 | `30-app` | App server with Docker, automatic stop ([ADR-0004](docs/adr/0004-servers-and-automatic-stop.md)), the app's database password ([ADR-0006](docs/adr/0006-application-database-login.md)), image registry and deploy scripts ([ADR-0008](docs/adr/0008-deployment.md)) |
-| `40-observability` | Monitoring server with Prometheus and Grafana, and the collector on the app server ([ADR-0009](docs/adr/0009-metrics-prometheus-grafana.md)) |
+| `40-observability` | Monitoring server with Prometheus and Grafana, and on the app server the collector and the background traffic ([ADR-0009](docs/adr/0009-metrics-prometheus-grafana.md), [ADR-0010](docs/adr/0010-traffic-generator.md)) |
 
 ## Documentation
 

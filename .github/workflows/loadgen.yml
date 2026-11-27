@@ -1,0 +1,163 @@
+# Runs the traffic generator (loadgen/) for real: every profile for a few seconds against the app on PostgreSQL 18
+# with the small data set, sending its results to Prometheus configured as on the monitoring server. No AWS access.
+#
+# Proves: every request of every profile gets an expected answer (STRICT=1), the same seed sends the same requests,
+# and the results arrive in Prometheus under the names and labels the dashboards use (listed in the run's summary).
+
+name: loadgen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "loadgen/**"
+      - "app/shop/main.py" # the API the traffic calls
+      - "app/shop/models.py"
+      - "terraform/modules/observability/files/obs/prometheus.yml"
+      - ".github/workflows/loadgen.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loadgen
+  cancel-in-progress: true
+
+env:
+  # The same images as on the servers (terraform/modules/observability/variables.tf; a test compares them)
+  PROMETHEUS_IMAGE: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+  K6_IMAGE: grafana/k6:2.4.0@sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276
+
+jobs:
+  test:
+    name: test (every profile against the app, results into Prometheus)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 # 18.6
+        env:
+          POSTGRES_PASSWORD: throwaway # exists only inside this job
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: throwaway
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Database with the small data set
+        run: |
+          set -euo pipefail
+          psql -X -q -d postgres -v ON_ERROR_STOP=1 -c "create database loadgen"
+          PGDATABASE=loadgen bash db/migrate.sh > /dev/null
+          PGDATABASE=loadgen bash db/seed/seed.sh small > /dev/null
+          psql -X -q -d loadgen -v ON_ERROR_STOP=1 -c "alter role shop_app password 'throwaway'"
+
+      - name: Start the app
+        working-directory: app
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check --require-hashes -r requirements.txt
+          echo throwaway > "$RUNNER_TEMP/app-password"
+          DB_HOST=127.0.0.1 DB_NAME=loadgen DB_PASSWORD_FILE="$RUNNER_TEMP/app-password" DB_SSLMODE=prefer \
+            nohup python -m shop.server > "$RUNNER_TEMP/app.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/app.log"
+          exit 1
+
+      - name: Start Prometheus as on the monitoring server
+        run: |
+          set -euo pipefail
+          docker run -d --name prometheus --network host \
+            -v "$PWD/terraform/modules/observability/files/obs/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            "$PROMETHEUS_IMAGE" --config.file=/etc/prometheus/prometheus.yml --web.listen-address=127.0.0.1:9090 \
+            --web.enable-remote-write-receiver --web.enable-otlp-receiver > /dev/null
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9090/-/ready > /dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          docker logs prometheus
+          exit 1
+
+      - name: Every profile against the app
+        run: |
+          set -euo pipefail
+          profiles="$(python3 -c "import json; print(' '.join(json.load(open('loadgen/profiles.json'))['profiles']))")"
+          for profile in $profiles; do
+            echo "::group::$profile"
+            docker run --rm --network host -v "$PWD/loadgen:/loadgen:ro" \
+              -e PROFILE="$profile" -e RATE=5 -e PEAK=3 -e DURATION=20s -e SEED=1 -e STRICT=1 \
+              -e DATA_CUSTOMERS=500 -e DATA_PRODUCTS=100 -e DATA_ORDERS=5000 \
+              -e K6_NO_USAGE_REPORT=true \
+              -e K6_OTEL_EXPORTER_PROTOCOL=http/protobuf -e K6_OTEL_HTTP_EXPORTER_ENDPOINT=127.0.0.1:9090 \
+              -e K6_OTEL_HTTP_EXPORTER_URL_PATH=/api/v1/otlp/v1/metrics -e K6_OTEL_HTTP_EXPORTER_INSECURE=true \
+              -e K6_OTEL_SERVICE_NAME=k6 -e K6_OTEL_METRIC_PREFIX=k6_ \
+              "$K6_IMAGE" run --quiet --out opentelemetry /loadgen/shop.js
+            echo "::endgroup::"
+            echo "- $profile: every answer as expected" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: The same seed sends the same requests
+        run: |
+          set -euo pipefail
+          plans="$RUNNER_TEMP/plans"
+          mkdir -p "$plans"
+          for run in a:7 b:7 c:8; do
+            name="${run%%:*}"
+            docker run --rm -v "$PWD/loadgen:/loadgen:ro" -e PROFILE=mixed -e SEED="${run##*:}" -e DRY_RUN=1 -e ITERATIONS=300 \
+              -e K6_NO_USAGE_REPORT=true "$K6_IMAGE" run --quiet --log-format raw /loadgen/shop.js 2> "$plans/$name.log" > /dev/null
+            # Two VUs share the work, so the lines come in any order: each one starts with the request's number
+            grep -E '^[0-9]+ [a-z_]+ (GET|POST|PUT) /' "$plans/$name.log" | sort -n > "$plans/$name.txt"
+          done
+          if [ "$(wc -l < "$plans/a.txt")" -ne 300 ]; then echo "::error::expected 300 planned requests"; head "$plans/a.log"; exit 1; fi
+          if ! cmp -s "$plans/a.txt" "$plans/b.txt"; then echo "::error::the same seed planned other requests"; diff "$plans/a.txt" "$plans/b.txt" | head; exit 1; fi
+          if cmp -s "$plans/a.txt" "$plans/c.txt"; then echo "::error::another seed planned the same requests"; exit 1; fi
+          echo "- seed 7 twice: the same 300 requests; seed 8: others" >> "$GITHUB_STEP_SUMMARY"
+          cut -d' ' -f2 "$plans/a.txt" | sort | uniq -c | sort -rn | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The results arrived in Prometheus
+        run: |
+          set -euo pipefail
+          sleep 15 # k6 sends every 10 seconds; the last batch at its end
+          curl -fsS http://127.0.0.1:9090/api/v1/label/__name__/values \
+            | python3 -c 'import json, sys; [print(n) for n in json.load(sys.stdin)["data"] if n.startswith("k6_")]' > names.txt
+          {
+            echo "### k6 metrics in Prometheus"
+            sed 's/^/- /' names.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+          requests="$(grep -E '^k6_http_reqs' names.txt | head -1 || true)"
+          if [ -z "$requests" ] || ! grep -qE '^k6_http_req_duration' names.txt; then
+            echo "::error::no request count or duration from k6 in Prometheus"; docker logs prometheus 2>&1 | tail -20; exit 1
+          fi
+          # The labels of the request counter: job k6, the endpoint as "name", and no "url" (one series per product number)
+          curl -fsS -G http://127.0.0.1:9090/api/v1/series --data-urlencode "match[]=$requests" \
+            | python3 -c '
+          import json, sys
+          series = json.load(sys.stdin)["data"]
+          labels = sorted({key for s in series for key in s})
+          names = sorted({s.get("name", "") for s in series})
+          print("### labels of", series[0]["__name__"], "\n-", ", ".join(labels), "\n- endpoints:", ", ".join(names))
+          assert {s.get("job") for s in series} == {"k6"}, "job is not k6"
+          assert "name" in labels and "url" not in labels, "endpoint label missing, or url still there"
+          assert "status" in labels and "profile" in labels, "status or profile label missing"
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          tail -50 "$RUNNER_TEMP/app.log" || true
+          docker logs prometheus 2>&1 | tail -50 || true

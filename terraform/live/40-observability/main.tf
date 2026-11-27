@@ -2,7 +2,8 @@
 #
 #   data.network    reads the outputs of 10-network (subnet, app security group)
 #   data.app        reads the outputs of 30-app (the app server)
-#   module.obs      monitoring server (Prometheus, Grafana) and the app server's collector (Alloy)
+#   module.obs      monitoring server (Prometheus, Grafana) and, on the app server, the collector (Alloy) and the
+#                   background traffic (k6 with loadgen/: a change there is applied through this stack)
 #   module.schedule weekdays 07:00-19:00 only, like the app server
 
 data "terraform_remote_state" "network" {
@@ -40,6 +41,9 @@ module "obs" {
   app_security_group_id    = data.terraform_remote_state.network.outputs.app_security_group_id
   app_instance_id          = data.terraform_remote_state.app.outputs.app_instance_id
   permissions_boundary_arn = data.aws_iam_policy.boundary.arn
+
+  background_rate = var.background_rate
+  loadgen_files   = { for name in fileset("${path.module}/../../../loadgen", "*.{js,json}") : name => file("${path.module}/../../../loadgen/${name}") }
 }
 
 module "schedule" {

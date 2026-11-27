@@ -1,0 +1,63 @@
+{
+  "data": {
+    "customers": 500000,
+    "products": 100000,
+    "orders": 5000000,
+    "last_day": "2026-11-01"
+  },
+  "endpoints": {
+    "customer": { "kind": "read", "cost": "cheap", "reads": "customers by primary key" },
+    "customer_by_email": { "kind": "read", "cost": "scan", "reads": "all customers (43 MB): no index on lower(email)" },
+    "order_history": { "kind": "read", "cost": "scan", "reads": "all orders (403 MB): no index on customer_id" },
+    "orders_delivered": { "kind": "read", "cost": "cheap", "reads": "the first delivered orders (98% are delivered, so the scan stops early)" },
+    "orders_by_status": { "kind": "read", "cost": "scan", "reads": "most of orders for a rare status" },
+    "order_detail": { "kind": "read", "cost": "scan", "reads": "order and lines by key, all payments (372 MB): no index on order_id" },
+    "product_search": { "kind": "read", "cost": "cheap", "reads": "all products (25 MB, stays in memory)" },
+    "product_detail": { "kind": "read", "cost": "scan", "reads": "product by key, all reviews (142 MB): no index on product_id" },
+    "top_products": { "kind": "read", "cost": "scan", "reads": "orders and order lines of a period (1.4 GB)" },
+    "daily_sales": { "kind": "read", "cost": "cheap", "reads": "the materialized view mv_daily_sales (10 MB)" },
+    "event_counts": { "kind": "read", "cost": "scan", "reads": "events of a period (1.5 GB)" },
+    "add_event": { "kind": "write", "cost": "cheap", "reads": "one insert" },
+    "place_order": { "kind": "write", "cost": "cheap", "reads": "prices and stock by key, three inserts" },
+    "add_review": { "kind": "write", "cost": "cheap", "reads": "one insert" },
+    "change_status": { "kind": "write", "cost": "scan", "reads": "order by key, update of payments by order_id (372 MB)" }
+  },
+  "profiles": {
+    "background": {
+      "about": "All day on the app server: a little real use, only requests that need no full scan",
+      "shape": "constant", "rate": 1.5, "duration": "13h",
+      "mix": { "customer": 30, "product_search": 35, "daily_sales": 15, "orders_delivered": 10,
+               "add_event": 7, "place_order": 2, "add_review": 1 }
+    },
+    "read-heavy": {
+      "about": "90% reads, 10% writes: a shop that is mostly browsed",
+      "shape": "constant", "rate": 5, "duration": "10m",
+      "mix": { "customer": 10, "customer_by_email": 5, "order_history": 15, "order_detail": 10, "orders_by_status": 5,
+               "product_search": 20, "product_detail": 15, "top_products": 2, "daily_sales": 5, "event_counts": 3,
+               "add_event": 6, "place_order": 2, "add_review": 1, "change_status": 1 }
+    },
+    "write-heavy": {
+      "about": "30% reads, 70% writes: a sale, with many orders and clicks",
+      "shape": "constant", "rate": 5, "duration": "10m",
+      "mix": { "product_detail": 8, "product_search": 8, "order_history": 6, "customer": 4, "order_detail": 4,
+               "add_event": 45, "place_order": 15, "add_review": 5, "change_status": 5 }
+    },
+    "mixed": {
+      "about": "60% reads, 40% writes",
+      "shape": "constant", "rate": 5, "duration": "10m",
+      "mix": { "product_search": 15, "product_detail": 12, "order_history": 10, "order_detail": 8, "customer": 8,
+               "daily_sales": 4, "top_products": 2, "customer_by_email": 1,
+               "add_event": 25, "place_order": 10, "add_review": 3, "change_status": 2 }
+    },
+    "spike": {
+      "about": "The mixed load, with a short burst of PEAK times the rate in the middle",
+      "shape": "spike", "rate": 2, "peak": 5, "duration": "10m",
+      "mix": "mixed"
+    },
+    "soak": {
+      "about": "The mixed load for a long time: slow growth, leaks, vacuum",
+      "shape": "constant", "rate": 2, "duration": "2h",
+      "mix": "mixed"
+    }
+  }
+}

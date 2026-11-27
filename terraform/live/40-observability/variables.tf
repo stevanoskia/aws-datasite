@@ -25,3 +25,9 @@ variable "instance_az_index" {
     error_message = "Must be 0 (zone a) or 1 (zone b)."
   }
 }
+
+variable "background_rate" {
+  description = "Requests per second of the background traffic on the app server; 0 = none"
+  type        = number
+  default     = 1.5
+}

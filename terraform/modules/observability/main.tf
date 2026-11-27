@@ -20,6 +20,8 @@ locals {
     images          = var.images
   }
 
+  prometheus_address = "${module.host.private_ip}:${var.prometheus_port}"
+
   obs_files = {
     "compose.yaml"                                     = templatefile("${path.module}/files/obs/compose.yaml", local.values)
     "prometheus.yml"                                   = file("${path.module}/files/obs/prometheus.yml")
@@ -29,12 +31,20 @@ locals {
     "grafana/dashboards/host.json"                     = file("${path.module}/files/obs/grafana/host.json")
   }
 
-  app_files = {
-    "compose.yaml" = templatefile("${path.module}/files/app/compose.yaml", local.values)
-    "config.alloy" = templatefile("${path.module}/files/app/config.alloy", merge(local.values, {
-      remote_write_url = "http://${module.host.private_ip}:${var.prometheus_port}/api/v1/write"
-    }))
-  }
+  app_compose = templatefile("${path.module}/files/app/compose.yaml", merge(local.values, {
+    background_rate = var.background_rate
+    otlp_endpoint   = local.prometheus_address # k6 wants host and port only
+  }))
+
+  app_files = merge(
+    {
+      "compose.yaml" = local.app_compose
+      "config.alloy" = templatefile("${path.module}/files/app/config.alloy", merge(local.values, {
+        remote_write_url = "http://${local.prometheus_address}/api/v1/write"
+      }))
+    },
+    { for name, content in var.loadgen_files : "loadgen/${name}" => content },
+  )
 
   # Each server gets: its files (compressed), then install.sh, which starts the compose project
   documents = {

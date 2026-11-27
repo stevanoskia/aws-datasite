@@ -21,6 +21,8 @@ variables {
   app_security_group_id    = "sg-0app0000000000000"
   app_instance_id          = "i-0app0000000000000"
   permissions_boundary_arn = "arn:aws:iam::123456789012:policy/test-boundary"
+  # The real traffic files, so that the document test below covers them too
+  loadgen_files = { for name in fileset("../../../loadgen", "*.{js,json}") : name => file("../../../loadgen/${name}") }
 }
 
 run "only_the_app_server_reaches_prometheus" {
@@ -99,8 +101,68 @@ run "rejects_an_image_without_digest" {
       prometheus = "prom/prometheus:latest"
       grafana    = "grafana/grafana:13.3.2@sha256:81556409ba48b2b922e0adb69a2511337d8ba7578f11962eefa6149a2d815101"
       alloy      = "grafana/alloy:v1.22.0@sha256:9acc2529bc1edb7f5b2bd801dd8334ebc80c158e3a9e5526ecd7c9a273d43189"
+      k6         = "grafana/k6:2.4.0@sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276"
     }
   }
 
   expect_failures = [var.images]
+}
+
+run "background_traffic_reports_to_the_monitoring_server" {
+  assert {
+    condition     = strcontains(output.app_compose, "\n  traffic:\n") && strcontains(output.app_compose, "PROFILE: background")
+    error_message = "With a rate above 0, the app server must run the background traffic."
+  }
+
+  assert {
+    condition = (
+      strcontains(output.app_compose, "K6_OTEL_HTTP_EXPORTER_ENDPOINT: 10.30.11.20:9090\n")
+      && strcontains(output.app_compose, "K6_OTEL_HTTP_EXPORTER_URL_PATH: /api/v1/otlp/v1/metrics\n")
+    )
+    error_message = "k6 must send to Prometheus' OpenTelemetry receiver on the monitoring server (host and port, no scheme)."
+  }
+
+  assert {
+    condition     = strcontains(output.app_compose, "RATE: \"1.5\"\n")
+    error_message = "The traffic must use the rate given to the module."
+  }
+
+  assert {
+    condition = (
+      local.app_files["loadgen/shop.js"] == file("../../../loadgen/shop.js")
+      && local.app_files["loadgen/profiles.json"] == file("../../../loadgen/profiles.json")
+    )
+    error_message = "The traffic files must reach the app server unchanged (not rendered as templates)."
+  }
+}
+
+run "no_background_traffic_at_rate_zero" {
+  variables {
+    background_rate = 0
+  }
+
+  assert {
+    condition     = !strcontains(output.app_compose, "traffic:") && strcontains(output.app_compose, "\n  alloy:\n")
+    error_message = "Rate 0 must remove the traffic container and keep the collector."
+  }
+}
+
+run "rejects_background_traffic_without_its_files" {
+  command = plan
+
+  variables {
+    loadgen_files = {}
+  }
+
+  expect_failures = [var.background_rate]
+}
+
+run "rejects_a_background_rate_that_is_a_load_test" {
+  command = plan
+
+  variables {
+    background_rate = 20
+  }
+
+  expect_failures = [var.background_rate]
 }

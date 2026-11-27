@@ -1,8 +1,17 @@
-# The app server pushes its metrics here (remote write from Alloy and k6), so Prometheus
-# needs no route to it. Prometheus scrapes only itself; the database exporters follow.
+# The app server pushes its metrics here (remote write from Alloy, OpenTelemetry from k6), so
+# Prometheus needs no route to it. Prometheus scrapes only itself; the database exporters follow.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+
+# OpenTelemetry (k6): service.name becomes the job label ("k6"); target_info keeps it too
+otlp:
+  keep_identifying_resource_attributes: true
+
+# OpenTelemetry senders can deliver late or out of order; the Prometheus guide recommends 30 minutes
+storage:
+  tsdb:
+    out_of_order_time_window: 30m
 
 scrape_configs:
   - job_name: prometheus

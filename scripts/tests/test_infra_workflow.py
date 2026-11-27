@@ -281,6 +281,7 @@ class History:
         ([".github/workflows/infra.yml"], "plan=true"),
         (["scripts/safe_log.py"], "plan=true"),
         (["scripts/ci_private_values.sh"], "plan=true"),
+        (["loadgen/shop.js"], "plan=true"),
     ],
 )
 def test_only_changes_that_terraform_reads_are_planned(tmp_path, paths, expected):
@@ -321,3 +322,16 @@ def test_every_script_of_plan_and_apply_counts_as_a_change():
 def test_a_change_to_any_workflow_runs_the_workflow_tests():
     paths = re.search(r"push:\n.*?paths:\n((?:      - .*\n)+)", WORKFLOW, re.S).group(1)
     assert '".github/workflows/**"' in paths and '"scripts/**"' in paths
+
+
+def test_every_folder_that_a_stack_reads_starts_a_plan():
+    """A stack that reads files outside terraform/ (like loadgen/) must be planned when they change."""
+    wanted = re.search(r"wanted=\((.*)\)", step_script(SCOPE)).group(1).split()
+    paths = re.search(r"push:\n.*?paths:\n((?:      - .*\n)+)", WORKFLOW, re.S).group(1)
+    read = set()
+    for stack in (ROOT / "terraform/live").glob("*/*.tf"):
+        read.update(re.findall(r"path\.module\}/\.\./\.\./\.\./([a-z0-9_-]+)", stack.read_text(encoding="utf-8")))
+    assert read, "no stack reads files outside terraform/ (the test would prove nothing)"
+    for folder in read:
+        assert folder in wanted, f"{folder}/ is read by a stack but does not start a plan"
+        assert f'"{folder}/**"' in paths, f"{folder}/ is read by a stack but does not start the workflow"

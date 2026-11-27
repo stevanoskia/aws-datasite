@@ -12,3 +12,8 @@ output "document_names" {
   description = "SSM documents that configure the two servers"
   value       = { for key, document in aws_ssm_document.stack : key => document.name }
 }
+
+output "app_compose" {
+  description = "The app server's compose file as written there (for tests and review)"
+  value       = local.app_compose
+}

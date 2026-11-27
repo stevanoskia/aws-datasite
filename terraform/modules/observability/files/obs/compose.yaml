@@ -8,7 +8,8 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
       - --storage.tsdb.retention.size=12GB
-      - --web.enable-remote-write-receiver
+      - --web.enable-remote-write-receiver # Alloy
+      - --web.enable-otlp-receiver # k6 (OpenTelemetry metrics)
     ports:
       - "${prometheus_port}:9090" # the only open port; the security group allows the app server only
     volumes:

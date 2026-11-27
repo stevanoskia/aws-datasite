@@ -1,5 +1,5 @@
-# App server: the collector next to the app (the app itself is started by the deploy script).
-# Host network: Alloy reaches the app on the server's localhost, where the app listens.
+# App server: the collector and the background traffic next to the app (the app itself is started by the deploy script).
+# Host network: Alloy and k6 reach the app on the server's localhost, where the app listens.
 services:
   alloy:
     image: ${images.alloy}
@@ -19,6 +19,32 @@ services:
       - /:/host/root:ro,rslave
     mem_limit: 200m
     restart: unless-stopped
+%{ if background_rate > 0 ~}
+
+  traffic:
+    image: ${images.k6}
+    # Runs for 13 hours, then starts again (the server runs 12 hours a day); --quiet: no progress bar in the log
+    command: [run, --quiet, --out, opentelemetry, /loadgen/shop.js]
+    network_mode: host
+    environment:
+      PROFILE: background
+      RATE: "${background_rate}"
+      DURATION: 13h
+      SEED: "1"
+      BASE_URL: http://127.0.0.1:${app_port}
+      K6_NO_USAGE_REPORT: "true" # k6 would report its use to Grafana Labs
+      # The results go to Prometheus as OpenTelemetry metrics
+      K6_OTEL_EXPORTER_PROTOCOL: http/protobuf
+      K6_OTEL_HTTP_EXPORTER_ENDPOINT: ${otlp_endpoint}
+      K6_OTEL_HTTP_EXPORTER_URL_PATH: /api/v1/otlp/v1/metrics
+      K6_OTEL_HTTP_EXPORTER_INSECURE: "true" # inside the VPC, port 9090 open to the app server only
+      K6_OTEL_SERVICE_NAME: k6
+      K6_OTEL_METRIC_PREFIX: k6_
+    volumes:
+      - ./loadgen:/loadgen:ro
+    mem_limit: 200m
+    restart: unless-stopped
+%{ endif ~}
 
 volumes:
   alloy-data:
