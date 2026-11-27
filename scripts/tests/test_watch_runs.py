@@ -2,6 +2,7 @@
 a wait for an approval counted as work, or a failed run that ends the watch with success."""
 
 import importlib.util
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -133,3 +134,19 @@ def test_a_commit_without_runs_ends_after_a_while(monkeypatch, capsys):
     monkeypatch.setattr(watch.time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(watch.sys, "argv", ["watch_runs.py", "HEAD"])
     assert watch.main() == 0 and "No run started" in capsys.readouterr().out
+
+
+def test_a_new_workflow_shows_its_time_but_no_percentage():
+    text = watch.line(RUN, [job("validate", status="in_progress", started=60)], {}, NOW)
+    assert "--" in text and "%" not in text and "left" not in text and "1m40s" in text
+
+
+def test_lines_never_wrap_so_the_redraw_stays_in_place(monkeypatch, capsys):
+    github = GitHub("success")
+    monkeypatch.setattr(watch, "gh_api", github)
+    monkeypatch.setattr(watch.time, "sleep", lambda _: None)
+    monkeypatch.setattr(watch.sys, "argv", ["watch_runs.py", "HEAD"])
+    monkeypatch.setattr(watch.shutil, "get_terminal_size", lambda fallback: watch.os.terminal_size((40, 24)))
+    watch.main()
+    drawn = re.findall(r"\x1b\[2K([^\n]*)\n", capsys.readouterr().out)
+    assert drawn and all(len(text) < 40 for text in drawn)

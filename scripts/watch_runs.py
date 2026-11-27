@@ -90,12 +90,20 @@ def what_runs(run: dict, jobs: list[dict]) -> str:
 
 def line(run: dict, jobs: list[dict], typical: dict[str, float], now: datetime) -> str:
     percent, left = progress(run, jobs, typical, now)
-    filled = BAR_WIDTH * percent // 100
-    bar = "#" * filled + "-" * (BAR_WIDTH - filled)
     started = parse_time(run.get("run_started_at") or run.get("created_at")) or now
     elapsed = (parse_time(run.get("updated_at")) if run["status"] == "completed" else now) - started
+    if not typical and run["status"] != "completed":
+        # A new workflow: no earlier run to compare with, so no percentage
+        return f"{run['name']:<7} [{'?' * BAR_WIDTH}]   --  {minutes(elapsed.total_seconds())} (no earlier run)  {what_runs(run, jobs)}"
+    filled = BAR_WIDTH * percent // 100
+    bar = "#" * filled + "-" * (BAR_WIDTH - filled)
     eta = "" if run["status"] == "completed" or run["status"] == "waiting" else f", ~{minutes(left)} left"
     return f"{run['name']:<7} [{bar}] {percent:3d}%  {minutes(elapsed.total_seconds())}{eta}  {what_runs(run, jobs)}"
+
+
+def fit(text: str, width: int) -> str:
+    """One screen row: a longer line would wrap, and redrawing by rows would then leave its first part behind."""
+    return text if len(text) < width else text[: max(1, width - 4)] + "..."
 
 
 # -----------------------------------------------------------------------------
@@ -160,8 +168,9 @@ def main() -> int:
             lines = [f"(no answer from GitHub: {str(error)[:80]})"]
         if shown:
             sys.stdout.write(f"\x1b[{shown}F")  # back to the first line of the last round, to draw over it
+        width = shutil.get_terminal_size((120, 24)).columns
         for text in lines:
-            sys.stdout.write("\x1b[2K" + text + "\n")
+            sys.stdout.write("\x1b[2K" + fit(text, width) + "\n")
         sys.stdout.flush()
         shown = len(lines)
         if runs and all(run["status"] == "completed" for run in runs) and not lines[0].startswith("(no answer"):

@@ -138,7 +138,7 @@ jobs:
           {
             echo "### k6 metrics in Prometheus"
             sed 's/^/- /' names.txt
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY" # in the log too: the summary can't be read through the API
           requests="$(grep -E '^k6_http_reqs' names.txt | head -1 || true)"
           if [ -z "$requests" ] || ! grep -qE '^k6_http_req_duration' names.txt; then
             echo "::error::no request count or duration from k6 in Prometheus"; docker logs prometheus 2>&1 | tail -20; exit 1
@@ -154,7 +154,7 @@ jobs:
           assert {s.get("job") for s in series} == {"k6"}, "job is not k6"
           assert "name" in labels and "url" not in labels, "endpoint label missing, or url still there"
           assert "status" in labels and "profile" in labels, "status or profile label missing"
-          ' >> "$GITHUB_STEP_SUMMARY"
+          ' | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Logs on failure
         if: failure()
