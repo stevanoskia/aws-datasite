@@ -14,6 +14,7 @@ on:
       - "app/shop/main.py" # the API the traffic calls
       - "app/shop/models.py"
       - "terraform/modules/observability/files/obs/prometheus.yml"
+      - "terraform/modules/observability/files/obs/grafana/**" # the dashboards' k6 metrics are checked below
       - ".github/workflows/loadgen.yml"
   workflow_dispatch:
 
@@ -155,6 +156,34 @@ jobs:
           assert "name" in labels and "url" not in labels, "endpoint label missing, or url still there"
           assert "status" in labels and "profile" in labels, "status or profile label missing"
           ' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # A dashboard that asks for a metric or label that never arrives shows "No data" and nobody notices
+      - name: The dashboards use only metrics and labels that arrive
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import glob, json, re, urllib.parse, urllib.request
+          problems, checked = [], 0
+          for path in sorted(glob.glob("terraform/modules/observability/files/obs/grafana/*.json")):
+              for panel in json.load(open(path))["panels"]:
+                  for target in panel["targets"]:
+                      expr = target["expr"]
+                      used = {label.strip() for group in re.findall(r"\b(?:by|without) \(([^)]*)\)", expr) for label in group.split(",")}
+                      used |= set(re.findall(r"([a-z_]+)=~?\"", expr))
+                      for metric in sorted(set(re.findall(r"\bk6_[a-z_]+", expr))):
+                          query = urllib.parse.urlencode({"match[]": metric})
+                          series = json.load(urllib.request.urlopen(f"http://127.0.0.1:9090/api/v1/series?{query}"))["data"]
+                          have = {key for s in series for key in s}
+                          checked += 1
+                          if not series:
+                              problems.append(f"{panel['title']}: {metric} never arrived")
+                          elif used - have:
+                              problems.append(f"{panel['title']}: {metric} has no label {sorted(used - have)}")
+          print(f"- dashboards: {checked} uses of k6 metrics checked, {len(problems)} problems")
+          for problem in problems:
+              print(f"::error::{problem}")
+          raise SystemExit(1 if problems or not checked else 0)
+          PY
 
       - name: Logs on failure
         if: failure()

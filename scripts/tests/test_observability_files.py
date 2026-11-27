@@ -117,3 +117,9 @@ def test_every_changed_document_gets_a_new_association():
     association = main.split('resource "aws_ssm_association" "stack" {', 1)[1].split("\n}\n", 1)[0]
     assert "wait_for_success_timeout_seconds" in association
     assert re.search(r"replace_triggered_by = \[aws_ssm_document\.stack\[each\.key\]\.content\]", association)
+
+
+def test_every_dashboard_file_reaches_the_server():
+    main = (ROOT / "terraform/modules/observability/main.tf").read_text(encoding="utf-8")
+    shipped = set(re.findall(r'"grafana/dashboards/([a-z0-9_-]+\.json)"', main))
+    assert {path.name for path in (FILES / "obs/grafana").glob("*.json")} == shipped

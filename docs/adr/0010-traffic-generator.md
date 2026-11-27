@@ -100,6 +100,8 @@ reports up to 1.5 GB. The instance (`db.t4g.micro`, 1 GB memory) bursts on CPU c
 
 ## Outcome and further improvements
 Every profile can be run with one command, and the same seed repeats it. The background traffic keeps the dashboards
-supplied without full scans. Recommended next: a `loadtest` workflow that runs a profile on the app server through SSM and
-stops the background traffic during the run; a measuring procedure (statistics reset, warm-up, CPU credits, row counts); a
-Grafana dashboard for the k6 results.
+supplied without full scans. The *Load test* dashboard shows k6's view per endpoint, with a profile selector. Its duration
+percentiles come from fixed histogram buckets, so values between two bucket limits are estimates. Recommended next: a
+`loadtest` workflow that runs a profile on the app server through SSM and stops the background traffic during the run; a
+measuring procedure (statistics reset, warm-up, CPU credits, row counts); finer duration buckets (native histograms) if the
+fixed ones prove too coarse.

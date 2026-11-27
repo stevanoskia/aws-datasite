@@ -39,7 +39,10 @@ laptop:      tunnel.ps1 grafana ── SSM port forwarding ──> Grafana
 - **Grafana without its own login:** anonymous access with the Admin role, login form off. The tunnel is the authentication.
   Dashboards are provisioned from Git and can't be changed in the browser.
 - **Dashboards:** *Service* (requests per route and status, 5xx share, duration p50/p95/p99, statement duration per query,
-  pool wait, failed statements) and *Servers* (CPU, memory, disk, network; Prometheus' own memory and intake).
+  pool wait, failed statements), *Servers* (CPU, memory, disk, network; Prometheus' own memory and intake) and *Load test*
+  (k6: requests, unexpected answers, duration and time to first byte per endpoint, virtual users; selectable by profile,
+  [ADR-0010](0010-traffic-generator.md)). The `loadgen` workflow checks that every k6 metric and label a dashboard uses
+  arrives in Prometheus.
 
 Code: [`modules/observability`](../../terraform/modules/observability/main.tf), [`live/40-observability`](../../terraform/live/40-observability/main.tf),
 [`scripts/tunnel.ps1`](../../scripts/tunnel.ps1).

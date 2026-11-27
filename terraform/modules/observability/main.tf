@@ -29,6 +29,7 @@ locals {
     "grafana/provisioning/dashboards/files.yaml"       = file("${path.module}/files/obs/grafana/dashboards.yaml")
     "grafana/dashboards/service.json"                  = file("${path.module}/files/obs/grafana/service.json")
     "grafana/dashboards/host.json"                     = file("${path.module}/files/obs/grafana/host.json")
+    "grafana/dashboards/loadtest.json"                 = file("${path.module}/files/obs/grafana/loadtest.json")
   }
 
   app_compose = templatefile("${path.module}/files/app/compose.yaml", merge(local.values, {
