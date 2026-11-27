@@ -25,7 +25,7 @@ network or VPN. The servers still need outbound access for updates, container im
   - and may resume or end only its own sessions.
 
   A session forwards one port to the laptop: the app on the server itself, or the database through the server. Without traffic it ends after
-  20 minutes. [`scripts/tunnel.ps1`](../../scripts/tunnel.ps1) opens either one (`app` or `db`), after checking the login, the server, the
+  60 minutes, set in the Session Manager preferences (document `SSM-SessionManagerRunShell`, AWS default 20). [`scripts/tunnel.ps1`](../../scripts/tunnel.ps1) opens either one (`app` or `db`), after checking the login, the server, the
   database and the local port. It reads the profile names from environment variables, so they stay out of the repository.
 
 Code: [`modules/network`](../../terraform/modules/network/main.tf), [`modules/nat-instance`](../../terraform/modules/nat-instance/main.tf),

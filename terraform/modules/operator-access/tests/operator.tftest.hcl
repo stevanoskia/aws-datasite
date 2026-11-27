@@ -113,3 +113,30 @@ run "rejects_an_invalid_address" {
 
   expect_failures = [var.allowed_source_cidrs]
 }
+
+run "tunnels_stay_open_for_an_hour_without_traffic" {
+  assert {
+    condition     = aws_ssm_document.session_preferences.name == "SSM-SessionManagerRunShell"
+    error_message = "AWS reads the session preferences only from a document named SSM-SessionManagerRunShell."
+  }
+
+  assert {
+    condition     = aws_ssm_document.session_preferences.document_type == "Session"
+    error_message = "The session preferences must be a Session document."
+  }
+
+  assert {
+    condition     = jsondecode(aws_ssm_document.session_preferences.content).inputs.idleSessionTimeout == "60"
+    error_message = "The idle timeout must be 60 minutes, given as text."
+  }
+}
+
+run "rejects_an_idle_timeout_over_an_hour" {
+  command = plan
+
+  variables {
+    idle_session_minutes = 61
+  }
+
+  expect_failures = [var.idle_session_minutes]
+}

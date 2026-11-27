@@ -1,5 +1,5 @@
 <#
-Opens an SSM tunnel to the app or to the database, and keeps it open until Ctrl+C (or 20 minutes without traffic).
+Opens an SSM tunnel to the app or to the database, and keeps it open until Ctrl+C (or 60 minutes without traffic).
 
     scripts\tunnel.ps1 app          the app on http://localhost:8000
     scripts\tunnel.ps1 db           PostgreSQL on localhost:15432
@@ -90,6 +90,6 @@ if ($DryRun) {
     exit 0
 }
 Write-Host "Opening $where"
-Write-Host 'Keep this window open; Ctrl+C closes the tunnel. It also closes after 20 minutes without traffic.'
+Write-Host 'Keep this window open; Ctrl+C closes the tunnel. It also closes after 60 minutes without traffic.'
 & aws @session --profile $tunnelProfile --region $region
 exit $LASTEXITCODE

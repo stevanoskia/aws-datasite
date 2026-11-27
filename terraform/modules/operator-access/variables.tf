@@ -34,3 +34,14 @@ variable "max_session_seconds" {
   type        = number
   default     = 3600
 }
+
+variable "idle_session_minutes" {
+  description = "Minutes without traffic after which Session Manager ends a session (AWS allows 1-60)"
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.idle_session_minutes >= 1 && var.idle_session_minutes <= 60 && floor(var.idle_session_minutes) == var.idle_session_minutes
+    error_message = "Give whole minutes from 1 to 60."
+  }
+}
